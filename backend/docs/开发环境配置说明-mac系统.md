@@ -132,7 +132,7 @@ Installing the current project: app (0.1.0)
 ```
 
 ## 第3步：配置数据库连接参数并创建数据库实体
-### IDE中，环境配置文件：E:\code\FastAPIDemo2\.env
+### IDE中，环境配置文件：/Users/wutao/code/full-stack-fastapi-template/.env
 ```python配置文件
 # Backend
 BACKEND_CORS_ORIGINS="http://localhost,http://localhost:5173,https://localhost,https://localhost:5173,http://localhost.tiangolo.com"
@@ -348,4 +348,60 @@ if settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+```
+
+### git常用命令
+```python虚拟环境中
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+((.venv) ) wutaodeMacBook-Pro:full-stack-fastapi-template wutao$ cd backend/
+# 1. 查看修改的文件
+((.venv) ) wutaodeMacBook-Pro:backend wutao$ git status
+On branch develop
+Your branch is up to date with 'origin/develop'.
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+        new file:   app/api/static/swagger-ui/favicon.png
+        new file:   app/api/static/swagger-ui/swagger-ui-bundle.js
+        new file:   app/api/static/swagger-ui/swagger-ui.css
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   ../.env
+        modified:   ../.gitignore
+        modified:   app/main.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        ../.idea/
+        app/alembic/versions/ef947c38d184_init_db_20260115.py
+        docs/
+        poetry.lock
+# 2. 添加所有修改的文件到暂存区（也可指定单个文件：git add 文件名）
+((.venv) ) wutaodeMacBook-Pro:backend wutao$ git add .
+# 3. 提交暂存区的文件到本地仓库（备注需清晰）
+((.venv) ) wutaodeMacBook-Pro:backend wutao$ git commit -m "备注信息：初始化项目，新增gitignore拦截文件类型，本地加载swagger文档依赖"
+[develop 4866785] 备注信息：初始化项目，新增gitignore拦截文件类型，本地加载swagger文档依赖
+ 7 files changed, 2605 insertions(+), 1 deletion(-)
+ create mode 100644 backend/app/alembic/versions/ef947c38d184_init_db_20260115.py
+ create mode 100644 backend/app/api/static/swagger-ui/favicon.png
+ create mode 100644 backend/app/api/static/swagger-ui/swagger-ui-bundle.js
+ create mode 100644 backend/app/api/static/swagger-ui/swagger-ui.css
+ create mode 100644 "backend/docs/\345\274\200\345\217\221\347\216\257\345\242\203\351\205\215\347\275\256\350\257\264\346\230\216-mac\347\263\273\347\273\237.md"
+ create mode 100644 backend/poetry.lock
+# 4. 推送本地 develop 分支到远程 GitHub 的 develop 分支
+((.venv) ) wutaodeMacBook-Pro:backend wutao$ git push origin develop
+Enumerating objects: 24, done.
+Counting objects: 100% (24/24), done.
+Delta compression using up to 16 threads
+Compressing objects: 100% (16/16), done.
+Writing objects: 100% (17/17), 506.61 KiB | 1.44 MiB/s, done.
+Total 17 (delta 6), reused 1 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (6/6), completed with 6 local objects.
+To github.com:imhear/full-stack-fastapi-template.git
+   63f167d..4866785  develop -> develop
+((.venv) ) wutaodeMacBook-Pro:backend wutao$
 ```
