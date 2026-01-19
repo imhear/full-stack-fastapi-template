@@ -18,10 +18,12 @@ fileConfig(config.config_file_name)
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
 
-from app.models import SQLModel  # noqa
+# from app.models.models import SQLModel  # noqa. # 20250920 注释掉
+from app.models import * # 确保所有模型都被导入 # 20250920 新增
 from app.core.config import settings # noqa
 
-target_metadata = SQLModel.metadata
+# target_metadata = SQLModel.metadata # 20250920 注释掉
+target_metadata = Base.metadata # 20250920 新增
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

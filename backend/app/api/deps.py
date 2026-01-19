@@ -1,57 +1,94 @@
-from collections.abc import Generator
+"""
+API 依赖项配置文件
+backend/app/api/deps.py
+"""
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordRequestForm
+from dependency_injector.wiring import inject, Provide
 from typing import Annotated
-
-import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jwt.exceptions import InvalidTokenError
-from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
+from collections.abc import Generator
 
-from app.core import security
-from app.core.config import settings
-from app.core.db import engine
-from app.models import TokenPayload, User
+from app.di.container import Container
+from app.services.sys_auth_service import AuthService
+from app.core.security import reusable_oauth2
+from app.models import SysUser
+from fastapi import HTTPException, status
 
-reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/login/access-token"
-)
-
-
-def get_db() -> Generator[Session, None, None]:
-    with Session(engine) as session:
-        yield session
+from app.services.sys_role_service import RoleService
+from app.services.sys_user_service import UserService
 
 
-SessionDep = Annotated[Session, Depends(get_db)]
-TokenDep = Annotated[str, Depends(reusable_oauth2)]
+# ------------------------------
+# 核心：异步DB会话依赖（无self问题）
+# ------------------------------
+@inject
+async def get_async_db(
+    session: AsyncSession = Depends(Provide[Container.async_db])
+) -> AsyncSession:
+    """注入异步会话，无需额外配置（由容器统一管理）"""
+    yield session
 
 
-def get_current_user(session: SessionDep, token: TokenDep) -> User:
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
-        )
-        token_data = TokenPayload(**payload)
-    except (InvalidTokenError, ValidationError):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
-        )
-    user = session.get(User, token_data.sub)
+# ------------------------------
+# 同步DB会话依赖（核心修正）
+# ------------------------------
+@inject
+def get_sync_db(
+    session: Session = Depends(Provide[Container.sync_db])
+) -> Generator[Session, None, None]:
+    """
+    通过DI容器注入同步会话，与异步会话保持一致的注入方式。
+    不再直接导入引擎，而是直接使用容器提供的会话。
+    """
+    yield session
+
+
+# ------------------------------
+# 认证依赖：获取当前用户（OAuth2）
+# ------------------------------
+@inject
+async def get_current_user(
+    auth_service: AuthService = Depends(Provide[Container.auth_service]),
+    token: str = Depends(reusable_oauth2)
+) -> SysUser:
+    """从Token中解析用户，验证有效性"""
+    user = await auth_service.get_current_user(token)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
-
-
-def get_current_active_superuser(current_user: CurrentUser) -> User:
+# ------------------------------
+# 超级用户依赖（权限控制）
+# ------------------------------
+async def get_current_active_superuser(
+    current_user: SysUser = Depends(get_current_user)
+) -> SysUser:
+    """仅允许超级用户访问"""
     if not current_user.is_superuser:
         raise HTTPException(
-            status_code=403, detail="The user doesn't have enough privileges"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough privileges (requires superuser)"
         )
     return current_user
+
+
+# ------------------------------
+# 类型别名（简化API层代码）
+# ------------------------------
+AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db)]
+SyncSessionDep = Annotated[Session, Depends(get_sync_db)]
+CurrentUser = Annotated[SysUser, Depends(get_current_user)]
+CurrentSuperuser = Annotated[SysUser, Depends(get_current_active_superuser)]
+
+# 依赖类型注解（简化写法）
+AuthServiceDep = Annotated[AuthService, Depends(Provide[Container.auth_service])]
+UserServiceDep = Annotated[UserService, Depends(Provide[Container.user_service])]
+RoleServiceDep = Annotated[RoleService, Depends(Provide[Container.role_service])]
+OAuth2FormDep = Annotated[OAuth2PasswordRequestForm, Depends()]
+
