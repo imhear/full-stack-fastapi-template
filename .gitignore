@@ -1,4 +1,8 @@
+# IDE 配置文件（新增区：把VSCode和IDEA的规则归类到一起）
 .vscode
+.idea/  # 新增：忽略IntelliJ IDEA/PyCharm的.idea目录及所有子文件
+
+# 前端相关
 node_modules/
 /test-results/
 /playwright-report/
@@ -36,4 +40,3 @@ Thumbs.db
 
 # 业务规则
 data/
-#docs/
