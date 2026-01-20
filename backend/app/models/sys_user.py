@@ -43,6 +43,3 @@ sys_user_roles = Table(
     Column('role_id', String(36), ForeignKey('sys_roles.id'), primary_key=True),
     Column('created_at', DateTime, default=lambda: datetime.now(ZoneInfo("UTC")))
 )
-
-# wt@wt.com
-# $2b$12$mfSxUNsgP2CzDWBIvv1TSeh9E6twy/NZpTgkR7n783owKulVWsKYq

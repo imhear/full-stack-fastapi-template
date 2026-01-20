@@ -4,3 +4,36 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# 系统通用规则
+__pycache__/
+app.egg-info/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.coverage
+htmlcov/
+.cache/
+.venv/
+.env
+
+# Mac特有
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Windows特有
+Thumbs.db
+*.tmp
+*.bak
+.BIN
+:Zone.Identifier
+*.log
+
+# 业务规则
+data/
+#docs/

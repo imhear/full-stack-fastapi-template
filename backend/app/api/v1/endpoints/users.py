@@ -4,17 +4,14 @@ backend/app/api/v1/endpoints/users.py
 上次更新：2025/12/26
 """
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
-from dependency_injector.wiring import inject, Provide
-from typing import Annotated, Any, List
+from dependency_injector.wiring import inject
+from typing import Any, List
 
-from app.di.container import Container
-from app.services.sys_auth_service import AuthService
-from app.services.sys_user_service import UserService
 from app.schemas.sys_user import UserCreate, UserOut, UserUpdate, Message, UserList, UserUpdateSelfPassword
 from app.enums.sys_permissions import PermissionCode
 from app.utils.permission_decorators import permission
 from app.utils.permission_checker import permission_checker
-from app.api.deps import CurrentSuperuser, CurrentUser, AsyncSessionDep, UserServiceDep
+from app.api.deps import CurrentSuperuser, CurrentUser, UserServiceDep
 
 router = APIRouter(prefix="/users", tags=["users"])
 

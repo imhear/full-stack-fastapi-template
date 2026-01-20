@@ -1,6 +1,6 @@
 """
 基础模型文件，解决循环依赖问题
-backend/app/db/base.py
+backend/app/models/base.py
 """
 from sqlalchemy.ext.declarative import declarative_base
 
