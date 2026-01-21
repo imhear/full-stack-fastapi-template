@@ -6,13 +6,17 @@ from typing import Optional, List  # 【修复】添加缺失的导入
 from app.repositories.sys_permission_repository import PermissionRepository
 from app.models import SysUser, SysPermission  # 【修复】添加Permission模型导入
 from app.schemas.sys_user import Message
-
+from app.services.redis_service import RedisService  # 新增：RedisService依赖
 
 class PermissionService:
     """权限Service层：处理权限校验、权限管理"""
-    def __init__(self, permission_repository: PermissionRepository, async_db_session: AsyncSession):
+    def __init__(self,
+                 permission_repository: PermissionRepository,
+                 async_db_session: AsyncSession,
+                 redis_service: RedisService):  # 新增：RedisService依赖
         self.permission_repository = permission_repository
         self.async_db_session = async_db_session
+        self.redis_service = redis_service  # 新增：RedisService实例
 
     # ------------------------------
     # 核心业务：用户权限校验

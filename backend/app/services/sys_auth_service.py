@@ -10,13 +10,16 @@ from app.core.security import decode_jwt_token
 from app.repositories.sys_user_repository import UserRepository
 from app.models import SysUser
 from app.schemas.sys_user import TokenPayload
-
+from app.services.redis_service import RedisService  # 新增：RedisService依赖
 
 class AuthService:
     """认证Service层：处理用户登录、Token校验"""
-    def __init__(self, user_repository: UserRepository, async_db_session: AsyncSession):
+    def __init__(self, user_repository: UserRepository,
+                 async_db_session: AsyncSession,
+                 redis_service: RedisService):  # 新增：RedisService依赖
         self.user_repository = user_repository
         self.async_db_session = async_db_session
+        self.redis_service = redis_service  # 新增：RedisService实例
 
     # ------------------------------
     # 核心业务：用户认证（登录）

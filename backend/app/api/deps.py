@@ -11,6 +11,7 @@ from sqlmodel import Session
 from collections.abc import Generator
 
 from app.di.container import Container
+from app.services.captcha_service import CaptchaService
 from app.services.sys_auth_service import AuthService
 from app.core.security import reusable_oauth2
 from app.models import SysUser
@@ -19,6 +20,7 @@ from fastapi import HTTPException, status
 from app.services.sys_role_service import RoleService
 from app.services.sys_user_service import UserService
 
+import redis.asyncio as redis
 
 # ------------------------------
 # 核心：异步DB会话依赖（无self问题）
@@ -92,3 +94,4 @@ UserServiceDep = Annotated[UserService, Depends(Provide[Container.user_service])
 RoleServiceDep = Annotated[RoleService, Depends(Provide[Container.role_service])]
 OAuth2FormDep = Annotated[OAuth2PasswordRequestForm, Depends()]
 
+CaptchaServiceDep = Annotated[CaptchaService, Depends(Provide[Container.captcha_service])]

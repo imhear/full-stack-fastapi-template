@@ -10,6 +10,7 @@ from app.repositories.sys_permission_repository import PermissionRepository
 from app.schemas.sys_role import RoleCreate, RoleUpdate
 from app.schemas.sys_user import Message
 from app.core.exceptions import ResourceNotFound, BadRequest
+from app.services.redis_service import RedisService  # 新增：RedisService依赖
 
 
 class RoleService:
@@ -19,12 +20,13 @@ class RoleService:
             role_repository: RoleRepository,
             permission_repository: PermissionRepository,
             user_repository: UserRepository,
-            async_db_session: AsyncSession
-    ):
+            async_db_session: AsyncSession,
+            redis_service: RedisService):  # 新增：RedisService依赖
         self.role_repository = role_repository
         self.permission_repository = permission_repository
         self.user_repository = user_repository
         self.async_db_session = async_db_session
+        self.redis_service = redis_service  # 新增：RedisService实例
 
     # ------------------------------
     # 核心业务：创建角色

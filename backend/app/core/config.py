@@ -64,8 +64,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     # 密码加密
     BCRYPT_ROUNDS: int = 12
-    # 60 minutes * 24 hours * 8 days = 8 days
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    # 30 minutes
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     # ========== 修改点1：FRONTEND_HOST改为占位符，开发环境不依赖固定端口 ==========
     FRONTEND_HOST: str = "http://localhost"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
@@ -212,6 +212,27 @@ class Settings(BaseSettings):
 
         return self
 
+
+    # Redis配置
+    REDIS_HOST: str = Field("localhost", env="REDIS_HOST")
+    REDIS_PORT: int = Field(6379, env="REDIS_PORT")
+    REDIS_DB: int = Field(0, env="REDIS_DB")
+    REDIS_PASSWORD: str = Field("", env="REDIS_PASSWORD")
+    REDIS_ENCODING: str = Field("utf-8", env="REDIS_ENCODING")
+    REDIS_DECODE_RESPONSES: bool = Field(True, env="REDIS_DECODE_RESPONSES")
+    REDIS_MAX_CONNECTIONS: int = Field(10, env="REDIS_MAX_CONNECTIONS")
+    REDIS_SOCKET_TIMEOUT: int = Field(5, env="REDIS_SOCKET_TIMEOUT")
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = Field(5, env="REDIS_SOCKET_CONNECT_TIMEOUT")
+    REDIS_KEY_PREFIX: str = Field("app:", env="REDIS_KEY_PREFIX")
+    REDIS_USE_POOL: bool = Field(True, env="REDIS_USE_POOL")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def REDIS_URL(self) -> str:
+        """生成 Redis 连接 URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
 # 全局settings对象
 settings = Settings()  # type: ignore

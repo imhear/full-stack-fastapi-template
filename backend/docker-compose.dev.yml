@@ -1,0 +1,54 @@
+# 创建新的 docker-compose.dev.yml 文件
+services:
+  # postgres:  # 注释掉 PostgreSQL，因为你在本地启动
+  #   environment:
+  #     POSTGRES_DB: xxx
+  #     POSTGRES_PASSWORD: lasur888
+  #     POSTGRES_USER: postgres
+  #   image: localhost:5001/postgres:14
+  #   networks:
+  #     - default
+  #   ports:
+  #     - "5433:5432"
+  #   restart: always
+  #   user: root:root
+  #   volumes:
+  #     - /usr/local/var/postgresql@14:/var/lib/postgresql/data
+
+  # rabbitmq:  # 注释掉 RabbitMQ，暂不启动
+  #   environment:
+  #     RABBITMQ_DEFAULT_PASS: guest
+  #     RABBITMQ_DEFAULT_USER: guest
+  #   image: localhost:5001/rabbitmq:3.13-management
+  #   networks:
+  #     - default
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   restart: always
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
+
+  redis:  # 只启动 Redis 服务
+    image: localhost:5001/redis:latest
+    container_name: fastapi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+
+volumes:
+  # rabbitmq_data:  # 注释掉，因为不启动 RabbitMQ
+  redis-data:  # 保留 Redis 数据卷

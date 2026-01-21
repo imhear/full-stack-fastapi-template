@@ -15,13 +15,17 @@ from app.repositories.sys_user_repository import UserRepository
 from app.schemas.sys_user import UserCreate, UserCreateWithHash, Message, UserUpdate, UserList, UserUpdateSelfPassword
 from app.core.security import get_password_hash, verify_password
 from app.core.exceptions import ResourceNotFound, BadRequest
+from app.services.redis_service import RedisService  # 新增：RedisService依赖
 
 
 class UserService:
     """用户Service层：仅管业务逻辑，不碰事务/DB操作"""
-    def __init__(self, user_repository: UserRepository, async_db_session: AsyncSession):
+    def __init__(self, user_repository: UserRepository,
+                 async_db_session: AsyncSession,
+                 redis_service: RedisService):  # 新增：RedisService依赖
         self.user_repository = user_repository  # 注入Repo（无状态）
         self.async_db_session = async_db_session  # 注入请求级会话（备用，Repo主要用自己的事务）
+        self.redis_service = redis_service  # 新增：RedisService实例
 
     # ------------------------------
     # 核心业务：创建用户
