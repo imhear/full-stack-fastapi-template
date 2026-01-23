@@ -12,6 +12,9 @@ from typing import Optional, List, AsyncGenerator
 from app.models import SysUser, sys_user_role, SysRole  # 【新增】导入Role模型，用于深度预加载
 from app.schemas.sys_user import UserCreateWithHash
 
+from sqlalchemy import select, func, or_
+from sqlalchemy.orm import selectinload
+from datetime import datetime
 
 class UserRepository:
     """
@@ -86,7 +89,15 @@ class UserRepository:
             print("========开始 return result.scalars().first()==========")
             return result.scalars().first()
 
-    async def list_all(self, offset: int = 0, limit: int = 100) -> List[SysUser]:
+    async def list_all(
+            self,
+            offset: int = 0,
+            limit: int = 100,
+            status: Optional[int] = None,
+            create_time_start: Optional[datetime] = None,
+            create_time_end: Optional[datetime] = None,
+            keywords: Optional[str] = None
+    ) -> List[SysUser]:
         """分页查询用户列表（深度预加载：角色+角色的权限）"""
         async with self.transaction() as session:
             stmt = (
@@ -95,17 +106,74 @@ class UserRepository:
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
                 .offset(offset)
                 .limit(limit)
-                .order_by(SysUser.created_at.desc())  # 按创建时间倒序
+                .order_by(SysUser.create_time.desc())  # 按创建时间倒序
             )
+
+            # 应用过滤条件
+            stmt = self._apply_filters(
+                stmt=stmt,
+                status=status,
+                create_time_start=create_time_start,
+                create_time_end=create_time_end,
+                keywords=keywords
+            )
+
             result = await session.execute(stmt)
             return result.scalars().all()
 
-    async def count_total(self) -> int:
-        """查询用户总数（无需预加载，仅计数）"""
+    async def count_total(
+            self,
+            status: Optional[int] = None,
+            create_time_start: Optional[datetime] = None,
+            create_time_end: Optional[datetime] = None,
+            keywords: Optional[str] = None
+    ) -> int:
+        """查询符合条件的用户总数（支持过滤条件）"""
         async with self.transaction() as session:
-            stmt = select(SysUser)
+            stmt = select(func.count(SysUser.id))
+
+            # 应用相同的过滤条件
+            stmt = self._apply_filters(
+                stmt=stmt,
+                status=status,
+                create_time_start=create_time_start,
+                create_time_end=create_time_end,
+                keywords=keywords
+            )
+
             result = await session.execute(stmt)
-            return len(result.scalars().all())
+            count = result.scalar() or 0
+            return count
+
+    def _apply_filters(self, stmt, status, create_time_start, create_time_end, keywords):
+        """
+        通用过滤条件应用方法
+        """
+        # 状态过滤
+        if status is not None:
+            stmt = stmt.where(SysUser.status == status)
+
+        # 创建时间范围过滤
+        if create_time_start is not None:
+            stmt = stmt.where(SysUser.create_time >= create_time_start)
+        if create_time_end is not None:
+            # 结束时间需要包含当天
+            from datetime import timedelta
+            adjusted_end = create_time_end + timedelta(days=1) - timedelta(seconds=1)
+            stmt = stmt.where(SysUser.create_time <= adjusted_end)
+
+        # 关键字搜索（用户名、昵称、手机号）
+        if keywords and keywords.strip():
+            search_pattern = f"%{keywords.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    SysUser.username.ilike(search_pattern),
+                    SysUser.nickname.ilike(search_pattern),
+                    SysUser.mobile.ilike(search_pattern)
+                )
+            )
+
+        return stmt
 
     async def check_role_in_use(self, role_id: str) -> bool:
         """检查角色是否被用户使用（用于角色删除校验）"""

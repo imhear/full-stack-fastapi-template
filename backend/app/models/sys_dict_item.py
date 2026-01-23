@@ -16,7 +16,7 @@ class SysDictItem(Base):
     # 使用UUID主键
     id = uuid_pk_column()
 
-    # 关联字典编码（注意：这里使用dict_code作为关联，不是外键约束）
+    # 关联字典编码（注意：这里使用dict_code在逻辑上关联数据字典类型表，不是外键约束）
     dict_code = Column(String(50), nullable=True, comment='关联字典编码，与sys_dict表中的dict_code对应')
 
     # 字典项内容

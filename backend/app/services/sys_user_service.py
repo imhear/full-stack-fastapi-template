@@ -180,12 +180,15 @@ class UserService:
         #
         # return profile_data
 
+    from typing import List, Dict, Optional, Any, Tuple
+
+
     async def list_users_frontend(
             self,
             offset: int = 0,
             limit: int = 100,
             filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], int]:  # 修改返回类型为元组
         """
         获取用户列表（前端格式）
 
@@ -194,49 +197,110 @@ class UserService:
         Args:
             offset: 偏移量
             limit: 每页数量
-            filters: 过滤条件
+            filters: 过滤条件，包含：
+                - status: int（用户状态）
+                - create_time_start: date（创建时间起始）
+                - create_time_end: date（创建时间结束）
+                - keywords: str（搜索关键词）
 
         Returns:
-            前端格式的用户列表
+            元组: (前端格式的用户列表, 符合条件的用户总数)
         """
-        # 获取原始数据，包含部门和角色
-        users = await self.user_repository.list_all(offset=offset, limit=limit)
+        # 初始化过滤参数
+        filters = filters or {}
 
-        # 批量转换
-        return user_mapper.to_users_list(users)
-        # ==================== 需要清理的垃圾代码 ====================
-        # 获取原始数据
-        # users = await self.user_repository.list_all(offset=offset, limit=limit)
-        #
-        # # 批量转换
-        # results = []
-        # for user in users:
-        #     user_data = {
-        #         "id": str(user.id),
-        #         "username": user.username,
-        #         "nickname": user.nickname,
-        #         "avatar": user.avatar,
-        #         "gender": user.gender,
-        #         "mobile": user.mobile,
-        #         "email": user.email,
-        #         "status": user.status,
-        #         "createTime": user.create_time.isoformat() if user.create_time else None,
-        #         "roleNames": "",
-        #         "deptName": ""
-        #     }
-        #
-        #     # 添加角色名称
-        #     if hasattr(user, 'roles') and user.roles:
-        #         role_names = [role.name for role in user.roles if hasattr(role, 'name')]
-        #         user_data['roleNames'] = ', '.join(role_names)
-        #
-        #     # 添加部门名称
-        #     if hasattr(user, 'dept') and user.dept and hasattr(user.dept, 'name'):
-        #         user_data['deptName'] = user.dept.name
-        #
-        #     results.append(user_data)
-        #
-        # return results
+        # 提取过滤条件
+        status = filters.get("status")
+        create_time_start = filters.get("create_time_start")
+        create_time_end = filters.get("create_time_end")
+        keywords = filters.get("keywords")
+
+        print(f"🔍 服务层过滤条件: status={status}, "
+              f"create_time_start={create_time_start}, "
+              f"create_time_end={create_time_end}, "
+              f"keywords={keywords}")
+
+        # 1. 查询符合条件的用户列表（带过滤条件）
+        users = await self.user_repository.list_all(
+            offset=offset,
+            limit=limit,
+            status=status,
+            create_time_start=create_time_start,
+            create_time_end=create_time_end,
+            keywords=keywords
+        )
+
+        # 2. 查询符合条件的用户总数（带过滤条件）
+        total = await self.user_repository.count_total(
+            status=status,
+            create_time_start=create_time_start,
+            create_time_end=create_time_end,
+            keywords=keywords
+        )
+
+        print(f"📊 服务层结果: 分页查询{len(users)}条，总数{total}条")
+
+        # 3. 转换为前端格式
+        return user_mapper.to_users_list(users), total
+
+
+    # async def list_users_frontend(
+    #         self,
+    #         offset: int = 0,
+    #         limit: int = 100,
+    #         filters: Optional[Dict[str, Any]] = None
+    # ) -> List[Dict[str, Any]]:
+    #     """
+    #     获取用户列表（前端格式）
+    #
+    #     支持分页和过滤
+    #
+    #     Args:
+    #         offset: 偏移量
+    #         limit: 每页数量
+    #         filters: 过滤条件
+    #
+    #     Returns:
+    #         前端格式的用户列表
+    #     """
+    #     # 获取原始数据，包含部门和角色
+    #     users = await self.user_repository.list_all(offset=offset, limit=limit)
+    #
+    #     # 批量转换
+    #     return user_mapper.to_users_list(users)
+    #     # ==================== 需要清理的垃圾代码 ====================
+    #     # 获取原始数据
+    #     # users = await self.user_repository.list_all(offset=offset, limit=limit)
+    #     #
+    #     # # 批量转换
+    #     # results = []
+    #     # for user in users:
+    #     #     user_data = {
+    #     #         "id": str(user.id),
+    #     #         "username": user.username,
+    #     #         "nickname": user.nickname,
+    #     #         "avatar": user.avatar,
+    #     #         "gender": user.gender,
+    #     #         "mobile": user.mobile,
+    #     #         "email": user.email,
+    #     #         "status": user.status,
+    #     #         "createTime": user.create_time.isoformat() if user.create_time else None,
+    #     #         "roleNames": "",
+    #     #         "deptName": ""
+    #     #     }
+    #     #
+    #     #     # 添加角色名称
+    #     #     if hasattr(user, 'roles') and user.roles:
+    #     #         role_names = [role.name for role in user.roles if hasattr(role, 'name')]
+    #     #         user_data['roleNames'] = ', '.join(role_names)
+    #     #
+    #     #     # 添加部门名称
+    #     #     if hasattr(user, 'dept') and user.dept and hasattr(user.dept, 'name'):
+    #     #         user_data['deptName'] = user.dept.name
+    #     #
+    #     #     results.append(user_data)
+    #     #
+    #     # return results
 
     async def list_users(self, offset: int = 0, limit: int = 100) -> UserList:
         """
