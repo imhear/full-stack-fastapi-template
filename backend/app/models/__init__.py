@@ -11,91 +11,130 @@
 - 仅导出需要对外暴露的模型/表，内部实现不暴露
 
 backend/app/models/__init__.py
-上次更新：2026/1/20
+create_by：wutao@wt.com
+create_time：2026/1/22
+update_by wutao@wt.com
+update_time：2026/1/20
 """
 import sys
 import os
 
-# 关键修复：将项目根目录加入Python路径，确保直接运行该文件时能找到app包
-# 获取当前文件（__init__.py）的绝对路径
+# 将项目根目录加入Python路径
 CURRENT_FILE_PATH = os.path.abspath(__file__)
-# 向上找到项目根目录（backend）
-# 路径层级：backend/app/models/__init__.py
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_FILE_PATH)))
-# 将项目根目录加入sys.path
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# 1. 基础依赖：先导入所有模型的基类（无任何依赖）
+# 1. 基础依赖：先导入所有模型的基类
 try:
-    from app.models.base import Base
+    from app.models.base import Base, uuid_pk_column
 except ImportError as e:
-    raise ImportError(f"导入Base基类失败，请检查路径是否正确：{e}")
+    raise ImportError(f"导入Base基类失败: {e}")
 
 # 2. 核心模型：按"被依赖→依赖"顺序导入（底层→上层）
 try:
-    # 2.1 权限模型：无前置依赖（最底层）
+    # 2.1 基础数据模型（无外键依赖）
+    from app.models.sys_dept import SysDept
+    from app.models.sys_dict import SysDict
+    from app.models.sys_dict_item import SysDictItem
+    from app.models.sys_menu import SysMenu
     from app.models.sys_permission import SysPermission
-    # 2.2 角色模型：依赖权限模型
-    from app.models.sys_role import SysRole, sys_role_permissions
-    # 2.3 用户模型：依赖角色模型（最上层）
-    from app.models.sys_user import SysUser, sys_user_roles
-except ImportError as e:
-    raise ImportError(f"导入模型失败，请检查模型文件是否存在或路径正确：{e}")
+    from app.models.sys_role import SysRole, sys_role_menu, sys_role_permission
+    # from app.models.sys_config import SysConfig
+    # from app.models.sys_notice import SysNotice
 
-# 3. 统一导出：与导入顺序严格一致，便于维护和排查依赖问题
-#    （__all__仅控制"from app.models import *"的导出范围，不影响功能执行）
+    # 2.2 依赖其他模型的模型
+    from app.models.sys_user import SysUser, sys_user_role
+    # from app.models.sys_user_notice import SysUserNotice
+    # from app.models.sys_log import SysLog
+    # from app.models.gen_table import GenTable
+    # from app.models.gen_table_column import GenTableColumn
+    # from app.models.ai_assistant_record import AiAssistantRecord
+
+except ImportError as e:
+    raise ImportError(f"导入模型失败: {e}")
+
+
+# 3. 统一导出：与导入顺序严格一致
 __all__ = [
     # 基础类
-    'Base',
-    # 核心模型（按导入顺序）
-    'SysPermission',
+    'Base', 'uuid_pk_column',
+
+    # 核心模型（按依赖顺序）
+    'SysDept',
+    'SysDict',
+    'SysDictItem',
+    'SysMenu',
     'SysRole',
+    'sys_role_menu',
+    # 'SysConfig',
+    # 'SysNotice',
+
+    # 依赖其他模型的模型
     'SysUser',
-    # 中间表（按所属模型顺序）
-    'sys_role_permissions',
-    'sys_user_roles',
+    'sys_user_role',
+    # 'SysUserNotice',
+    # 'SysLog',
+    # 'GenTable',
+    # 'GenTableColumn',
+    # 'AiAssistantRecord',
 ]
 
-# 4. 安全校验：开发环境模型校验（生产环境不执行）
+
+# 4. 开发环境模型校验
 def validate_models() -> None:
-    """
-    验证所有模型类是否正确继承Base基类，避免开发时的低级错误
-    说明：
-    - 跳过Base本身和中间表（Table对象），仅校验模型类
-    - 若模型未正确继承Base，会抛出RuntimeError，提前暴露问题
-    """
-    # 改用globals()获取模块级别的全局变量（修复KeyError核心问题）
+    """验证所有模型类是否正确继承Base基类"""
     module_globals = globals()
 
     for model_name in __all__:
-        # 跳过Base基类本身
-        if model_name == 'Base':
+        if model_name in ['Base', 'uuid_pk_column']:
             continue
 
-        # 检查变量是否存在，避免KeyError
         if model_name not in module_globals:
-            raise RuntimeError(f"导出列表中的 {model_name} 未在模块中定义，请检查导入语句是否正确")
+            raise RuntimeError(f"导出列表中的 {model_name} 未在模块中定义")
 
-        # 获取导出的模型/表对象
         model = module_globals[model_name]
 
-        # 跳过多对多中间表（Table实例），仅校验模型类
-        # 中间表是Table对象，不是类，无需继承Base
-        if isinstance(model, type):  # 仅处理类对象（模型类）
+        # 跳过关联表（Table实例）和函数
+        if isinstance(model, type) and hasattr(model, '__tablename__'):
             if not issubclass(model, Base):
-                raise RuntimeError(f"模型 {model_name} 未正确继承Base基类！所有业务模型必须继承Base")
+                raise RuntimeError(f"模型 {model_name} 未正确继承Base基类！")
 
-# 仅在直接运行该文件时执行校验（仅开发环境执行校验）
-# 生产环境中，该文件会被作为模块导入（`import app.models`），此时 `__name__ != "__main__"`，校验逻辑不会执行
-# 执行命令：((.venv) ) wutaodeMacBook-Pro:backend wutao$ python app/models/__init__.py
+
+# 仅在直接运行该文件时执行校验
 if __name__ == "__main__":
     try:
         validate_models()
-        print("✅ 所有模型校验通过，依赖顺序正确，且均已正确继承Base基类")
+        print("✅ 所有模型校验通过，依赖顺序正确")
     except RuntimeError as e:
         print(f"❌ 模型校验失败：{e}")
-        raise  # 抛出异常，让调试更直观
+        raise
     except Exception as e:
         print(f"❌ 校验过程中出现未知错误：{e}")
         raise
+
+"""
+11c136ad-a815-4dee-8d23-4bf6d7948920
+wt@wt.com
+$2b$12$mfSxUNsgP2CzDWBIvv1TSeh9E6twy/NZpTgkR7n783owKulVWsKYq
+2026-01-21 09:14:51.889115+08
+
+
+# 连接到PostgreSQL，删除旧数据库
+wutao@wutaodeMacBook-Pro vue3-element-template % psql -d postgres -c "DROP DATABASE IF EXISTS admin_panel_2026;"
+DROP DATABASE
+
+ 使用 template0 模板创建数据库（能避免兼容性问题）
+wutao@wutaodeMacBook-Pro vue3-element-template % psql -d postgres -c "CREATE DATABASE admin_panel_2026 ENCODING 'UTF8' TEMPLATE template0;"
+CREATE DATABASE
+wutao@wutaodeMacBook-Pro vue3-element-template % 
+
+# 验证创建成功
+wutao@wutaodeMacBook-Pro vue3-element-template % psql -d admin_panel_2026 -c "SELECT current_database(), current_user;"
+ current_database | current_user 
+------------------+--------------
+ admin_panel_2026 | wutao
+(1 row)
+
+wutao@wutaodeMacBook-Pro vue3-element-template % 
+"""

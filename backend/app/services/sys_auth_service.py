@@ -24,7 +24,7 @@ class AuthService:
     # ------------------------------
     # 核心业务：用户认证（登录）
     # ------------------------------
-    async def authenticate_user(self, email: str, password: str) -> Optional[SysUser]:
+    async def authenticate_user(self, username: str, password: str) -> Optional[SysUser]:
         """
         认证用户：
         1. 按邮箱查询用户
@@ -32,17 +32,18 @@ class AuthService:
         3. 校验用户是否激活
         4. 认证成功返回用户，失败返回None
         """
+
         # 1. 查询用户
-        user = await self.user_repository.get_by_email(email=email)
+        user = await self.user_repository.get_by_username(username=username)
         if not user:
             return None  # 邮箱不存在
 
         # 2. 校验密码（调用core.security的verify_password）
-        if not verify_password(plain_password=password, hashed_password=user.hashed_password):
+        if not verify_password(plain_password=password, hashed_password=user.password):
             return None  # 密码错误
 
-        # 3. 校验用户是否激活
-        if not user.is_active:
+        # 3. 校验用户是否激活、且未删除
+        if not user.status == 1 or not user.is_deleted == 0:
             return None  # 用户未激活
 
         return user
@@ -76,8 +77,8 @@ class AuthService:
                 detail=f"User with ID '{token_data.sub}' not found"
             )
 
-        # 3. 校验用户激活状态
-        if not user.is_active:
+        # 3. 校验用户是否激活、且未删除
+        if not user.status == 1 or not user.is_deleted == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user, cannot access resources"

@@ -1,36 +1,41 @@
 """
-权限模块数据库模型文件
+系统权限模型
 backend/app/models/sys_permission.py
-上次更新：2026/1/19
+上次更新：2026/1/22
 """
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, SmallInteger, DateTime, ForeignKey, Table, text
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from zoneinfo import ZoneInfo  # Python 3.9+内置，无需安装
-import uuid
+from sqlalchemy.dialects.postgresql import UUID
 
-from app.models.base import Base
+from app.models.base import Base, uuid_pk_column
 
 
 class SysPermission(Base):
-    __tablename__ = "sys_permissions"
+    __tablename__ = "sys_permission"
+    __table_args__ = {'comment': '系统权限表'}
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    code = Column(String(64), unique=True, index=True, nullable=False)  # 权限代码，如：user:create, post:delete
-    name = Column(String(64), nullable=False)
-    description = Column(Text, nullable=True)
-    category = Column(String(16), default="general")  # 权限分类，如：user_management, content_management
-    module = Column(String(16), nullable=True)  # 所属模块
-    is_active = Column(Boolean, default=True)
-    is_system = Column(Boolean, default=False)  # 是否为系统内置权限
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("UTC")))
-    updated_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(ZoneInfo("UTC")),
-        onupdate=lambda: datetime.now(ZoneInfo("UTC"))
+    # 使用UUID主键
+    id = uuid_pk_column()
+    name = Column(String(64), nullable=False, unique=True, comment='权限名称')
+    code = Column(String(32), nullable=False, unique=True, comment='权限编码')
+    sort = Column(SmallInteger, default=0, comment='显示顺序')
+    status = Column(SmallInteger, default=1, comment='权限状态(1-正常 0-停用)')
+    data_scope = Column(SmallInteger, nullable=True, comment='数据权限(1-所有数据 2-部门及子部门数据 3-本部门数据 4-本人数据)')
+
+    # 审计字段
+    create_by = Column(UUID(as_uuid=True), nullable=True, comment='创建人 ID')
+    create_time = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'), comment='创建时间')
+    update_by = Column(UUID(as_uuid=True), nullable=True, comment='更新人ID')
+    update_time = Column(
+        DateTime,
+        server_default=text('CURRENT_TIMESTAMP'),
+        onupdate=text('CURRENT_TIMESTAMP'),
+        comment='更新时间'
     )
+    is_deleted = Column(SmallInteger, default=0, comment='逻辑删除标识(0-未删除 1-已删除)')
+
     # 关系定义
-    roles = relationship("SysRole", secondary="sys_role_permissions", back_populates="permissions")
+    roles = relationship("SysRole", secondary="sys_role_permission", back_populates="permissions")
 
     def __repr__(self):
-        return f"<SysPermission(id={self.id}, code={self.code})>"
+        return f"<SysPermission(id={self.id}, name={self.name}, code={self.code})>"

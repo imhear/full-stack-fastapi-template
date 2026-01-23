@@ -133,7 +133,7 @@ async def refresh_token(
 
 
 # 关键1：接口方法改为async def，支持await调用
-@router.post("/login/access-token")
+@router.post("/login")
 @inject
 async def login_access_token(  # 改def→async def
     login_request: LoginRequest,
@@ -155,6 +155,8 @@ async def login_access_token(  # 改def→async def
             "msg": "账号已被锁定，请30分钟后再试",
             "data": None
         }, status_code=400)
+        pass
+
 
     # 如果有验证码参数，则验证验证码
     if captcha_id and captcha_code:
@@ -165,36 +167,35 @@ async def login_access_token(  # 改def→async def
                 "data": None
             }, status_code=400)
 
-        # 验证用户凭据（使用现有的AuthService）
-        user = await auth_service.authenticate_user(
-            email=username, password=password
-        )
+    # 验证用户凭据（使用现有的AuthService）
+    user = await auth_service.authenticate_user(
+        username=username, password=password
+    )
 
-        if not user:
-            # 记录登录失败
-            await captcha_service.redis_service.record_login_failure(username)
-            failures = security_status["failures"] + 1
+    if not user:
+        # 记录登录失败
+        await captcha_service.redis_service.record_login_failure(username)
+        failures = security_status["failures"] + 1
 
-            if failures >= 5:
-                await captcha_service.redis_service.lock_account(username, 1800)
-                return JSONResponse({
-                    "code": "400",
-                    "msg": "密码错误次数过多，账号已被锁定30分钟",
-                    "data": None
-                }, status_code=400)
-
+        if failures >= 5:
+            await captcha_service.redis_service.lock_account(username, 1800)
             return JSONResponse({
                 "code": "400",
-                "msg": "用户名或密码错误",
+                "msg": "密码错误次数过多，账号已被锁定30分钟",
                 "data": None
             }, status_code=400)
 
-        elif not user.is_active:
-            return JSONResponse({
-                "code": "400",
-                "msg": "用户已被禁用",
-                "data": None
-            }, status_code=400)
+        return JSONResponse({
+            "code": "400",
+            "msg": "用户名或密码错误",
+            "data": None
+        }, status_code=400)
+    elif not user.status == 1:
+        return JSONResponse({
+            "code": "400",
+            "msg": "用户已被禁用",
+            "data": None
+        }, status_code=400)
 
     # 登录成功，清除失败记录
     await captcha_service.redis_service.reset_login_failure(username)
@@ -257,7 +258,7 @@ async def logout(
 
 
 # 关键1：接口方法改为async def，支持await调用
-@router.post("/login/access-token/old")
+@router.post("/login/access-token")
 @inject
 async def login_access_token(  # 改def→async def
     form_data: OAuth2FormDep,

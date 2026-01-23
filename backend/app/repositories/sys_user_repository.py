@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker, selectinload  # selectinload用于预�
 from contextlib import asynccontextmanager
 from typing import Optional, List, AsyncGenerator
 
-from app.models import SysUser, sys_user_roles, SysRole  # 【新增】导入Role模型，用于深度预加载
+from app.models import SysUser, sys_user_role, SysRole  # 【新增】导入Role模型，用于深度预加载
 from app.schemas.sys_user import UserCreateWithHash
 
 
@@ -55,8 +55,24 @@ class UserRepository:
             result = await session.execute(stmt)
             return result.scalars().first()
 
+    # ------------------------------
+    # 查询类方法（【核心修复】添加深度预加载：User.roles → Role.permissions）
+    # ------------------------------
+    async def get_by_username(self, username: str) -> Optional[SysUser]:
+        """按邮箱查询用户（深度预加载：角色+角色的权限）"""
+        async with self.transaction() as session:
+            stmt = (
+                select(SysUser)
+                # 【修复】深度预加载：先加载User.roles，再加载每个Role的permissions
+                .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
+                .where(SysUser.username == username)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
     async def get_by_id(self, user_id: str) -> Optional[SysUser]:
         """按ID查询用户（深度预加载：角色+角色的权限）"""
+        print("========开始get_by_id==========")
         async with self.transaction() as session:
             stmt = (
                 select(SysUser)
@@ -64,7 +80,10 @@ class UserRepository:
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
                 .where(SysUser.id == user_id)
             )
+            print("========开始 result = await session.execute(stmt)==========")
             result = await session.execute(stmt)
+
+            print("========开始 return result.scalars().first()==========")
             return result.scalars().first()
 
     async def list_all(self, offset: int = 0, limit: int = 100) -> List[SysUser]:
@@ -91,7 +110,7 @@ class UserRepository:
     async def check_role_in_use(self, role_id: str) -> bool:
         """检查角色是否被用户使用（用于角色删除校验）"""
         async with self.transaction() as session:
-            stmt = select(sys_user_roles.c.user_id).where(sys_user_roles.c.role_id == role_id).limit(1)
+            stmt = select(sys_user_role.c.user_id).where(sys_user_role.c.role_id == role_id).limit(1)
             result = await session.execute(stmt)
             return result.scalars().first() is not None  # 有数据则返回True
 
@@ -134,7 +153,7 @@ class UserRepository:
 
     async def clear_roles(self, user_id: str, session: AsyncSession):
         """清空用户所有角色（需在事务内执行）"""
-        stmt = delete(sys_user_roles).where(sys_user_roles.c.user_id == user_id)
+        stmt = delete(sys_user_role).where(sys_user_role.c.user_id == user_id)
         await session.execute(stmt)
 
     async def assign_roles(self, user_id: str, role_ids: List[str], session: AsyncSession):
@@ -142,7 +161,7 @@ class UserRepository:
         await self.clear_roles(user_id, session)  # 先清空现有角色
         if role_ids:
             # 批量插入角色关联
-            stmt = insert(sys_user_roles).values(
+            stmt = insert(sys_user_role).values(
                 [{"user_id": user_id, "role_id": rid} for rid in role_ids]
             )
             await session.execute(stmt)

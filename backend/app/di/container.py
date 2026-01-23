@@ -191,6 +191,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.endpoints.users",
             "app.api.v1.endpoints.login",
             "app.api.v1.endpoints.roles",
+            "app.api.v1.endpoints.menus",
             "app.api.deps"
         ]
     )

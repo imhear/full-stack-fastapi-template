@@ -10,7 +10,7 @@ from sqlalchemy import select
 from contextlib import asynccontextmanager
 from typing import Set, List, Optional, AsyncGenerator
 
-from app.models import SysUser, SysPermission, sys_user_roles, sys_role_permissions
+from app.models import SysUser, sys_user_role, SysPermission, sys_role_permission
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,9 @@ class PermissionRepository:
             stmt = (
                 select(SysPermission.code)
                 .select_from(SysUser)
-                .join(sys_user_roles, SysUser.id == sys_user_roles.c.user_id)
-                .join(sys_role_permissions, sys_user_roles.c.role_id == sys_role_permissions.c.role_id)
-                .join(SysPermission, sys_role_permissions.c.permission_id == SysPermission.id)
+                .join(sys_user_role, SysUser.id == sys_user_role.c.user_id)
+                .join(sys_role_permission, sys_user_role.c.role_id == sys_role_permission.c.role_id)
+                .join(SysPermission, sys_role_permission.c.permission_id == SysPermission.id)
                 .where(
                     SysUser.id == user_id,
                     SysPermission.is_active == True,  # 只取激活的权限

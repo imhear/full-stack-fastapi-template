@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from contextlib import asynccontextmanager
 from typing import Optional, List, AsyncGenerator
 
-from app.models import SysRole, sys_role_permissions
+from app.models import SysRole, sys_role_permission
 from app.schemas.sys_role import RoleCreate, RoleUpdate
 
 
@@ -108,12 +108,12 @@ class RoleRepository:
     async def assign_permissions(self, role_id: str, permission_ids: List[str], session: AsyncSession):
         """为角色分配权限（先清空再新增，需在事务内执行）"""
         # 1. 清空现有权限关联
-        delete_stmt = delete(sys_role_permissions).where(sys_role_permissions.c.role_id == role_id)
+        delete_stmt = delete(sys_role_permission).where(sys_role_permission.c.role_id == role_id)
         await session.execute(delete_stmt)
 
         # 2. 批量插入新权限关联
         if permission_ids:
-            insert_stmt = insert(sys_role_permissions).values(
+            insert_stmt = insert(sys_role_permission).values(
                 [{"role_id": role_id, "permission_id": perm_id} for perm_id in permission_ids]
             )
             await session.execute(insert_stmt)

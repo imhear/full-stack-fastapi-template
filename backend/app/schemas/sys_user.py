@@ -1,13 +1,14 @@
 """
 用户相关的Pydantic Schemas
-backend/app/schemas/user.py
+backend/app/schemas/sys_user.py
 上次更新：2025/12/1
 """
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, EmailStr, model_validator
+from pydantic import BaseModel, Field, EmailStr, model_validator, ConfigDict
 from typing import Optional, List
 from datetime import datetime
+import uuid
 
 from app.schemas.base import BaseSchema, TimestampSchema, IDSchema
 from app.schemas.sys_role import RoleOut
@@ -66,6 +67,56 @@ class UserOut(UserInDB):
 
 class UserWithPermissions(UserOut):
     permissions: List[str] = Field([], description="用户拥有的权限代码列表")
+
+
+# ============ 新增：用户信息响应模型（用于 /me 接口）============
+class UserMeResponse(BaseSchema):
+    """
+    用户信息响应模型 - 专为前端设计
+
+    注意：字段名与前端 TypeScript 定义保持一致
+    """
+    # 必需字段
+    userId: str = Field(..., description="用户ID", examples=["22222222-3333-4444-5555-666666666666"])
+    username: str = Field(..., description="用户名", example="admin")
+    nickname: str = Field(..., description="用户昵称", example="系统管理员")
+    avatar: Optional[str] = Field(None, description="用户头像URL", example="https://example.com/avatar.jpg")
+    roles: List[str] = Field(default_factory=list, description="角色代码列表", example=["ADMIN"])
+    perms: List[str] = Field(default_factory=list, description="权限代码列表", example=["user:read", "user:create"])
+
+    # 可选字段
+    gender: Optional[int] = Field(None, description="性别(1-男 2-女 0-保密)", example=1)
+    mobile: Optional[str] = Field(None, description="手机号", example="18812345678")
+    email: Optional[str] = Field(None, description="邮箱", example="youlaitech@163.com")
+    status: int = Field(1, description="状态(1-正常 0-禁用)", example=1)
+    deptId: Optional[str] = Field(None, description="部门ID", examples=["11111111-1111-1111-1111-111111111111"])
+    createTime: Optional[datetime] = Field(None, description="创建时间")
+
+    model_config = ConfigDict(
+        from_attributes=True,  # 允许从 ORM 对象转换
+        populate_by_name=True,  # 允许使用别名
+        json_encoders={
+            uuid.UUID: lambda v: str(v),  # UUID 转换为字符串
+            datetime: lambda v: v.isoformat() if v else None  # datetime 转换为 ISO 字符串
+        }
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def ensure_uuid_string(cls, data):
+        """确保所有 UUID 字段都转换为字符串"""
+        if isinstance(data, dict):
+            # 处理 UUID 字段
+            uuid_fields = ['userId', 'deptId']
+            for field in uuid_fields:
+                if field in data and data[field] and isinstance(data[field], uuid.UUID):
+                    data[field] = str(data[field])
+
+            # 处理嵌套的 UUID
+            if 'id' in data and data['id'] and isinstance(data['id'], uuid.UUID):
+                data['userId'] = str(data['id'])
+
+        return data
 
 # 用于用户列表响应
 class UserList(BaseSchema):

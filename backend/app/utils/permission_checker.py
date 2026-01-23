@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # 精准类型注解
 
 # ====================== 核心修正：导入已有deps.py的AsyncSessionDep ======================
 from app.api.deps import AsyncSessionDep, get_current_user
-from app.models import SysUser, SysRole, SysPermission, sys_user_roles, sys_role_permissions
+from app.models import SysUser, SysRole, SysPermission, sys_user_role, sys_role_permission
 # 导入全局时区配置xs
 from app.core.config import DEFAULT_TZ
 
@@ -129,8 +129,8 @@ async def get_user_permissions(
     try:
         # ====================== 终极修复：重构权限查询SQL ======================
         # 步骤1：查询用户关联的有效角色ID
-        role_ids_query = select(sys_user_roles.c.role_id).where(
-            sys_user_roles.c.user_id == user_id
+        role_ids_query = select(sys_user_role.c.role_id).where(
+            sys_user_role.c.user_id == user_id
         )
         role_ids_result = await session.execute(role_ids_query)
         role_ids = role_ids_result.scalars().all()
@@ -149,13 +149,13 @@ async def get_user_permissions(
 
         # 步骤2：查询角色关联的有效权限ID（仅is_active=True的角色和权限）
         permission_ids_query = select(
-            distinct(sys_role_permissions.c.permission_id)  # 去重
+            distinct(sys_role_permission.c.permission_id)  # 去重
         ).join(
-            SysRole, SysRole.id == sys_role_permissions.c.role_id
+            SysRole, SysRole.id == sys_role_permission.c.role_id
         ).join(
-            SysPermission, SysPermission.id == sys_role_permissions.c.permission_id
+            SysPermission, SysPermission.id == sys_role_permission.c.permission_id
         ).where(
-            sys_role_permissions.c.role_id.in_(role_ids),
+            sys_role_permission.c.role_id.in_(role_ids),
             SysRole.is_active == True,
             SysPermission.is_active == True
         )
