@@ -14,6 +14,11 @@ from dependency_injector.wiring import inject
 from typing import Any, List, Optional
 from datetime import date
 
+# from fastapi import Request
+# from app.api.deps import SyncSessionDep as SessionDep
+# from datetime import datetime, date
+from fastapi.responses import JSONResponse
+
 from app.schemas.responses import ApiResponse
 
 from app.core.exceptions import BadRequest, ResourceNotFound
@@ -115,55 +120,6 @@ async def get_profile(
         return ApiResponse.success(data=profile, msg="获取个人中心信息成功")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取个人中心信息失败: {str(e)}")
-
-
-# @router.get(
-#     "/list",
-#     response_model=ApiResponse[List[dict]],
-#     summary="获取用户列表",
-#     description="分页获取用户列表，返回前端友好格式"
-# )
-# @permission(
-#     code=PermissionCode.USER_READ.value,
-#     name="用户查询权限",
-#     description="查看用户详情"
-# )
-# @inject
-# async def list_users(
-#         _superuser: CurrentSuperuser,
-#         user_service: UserServiceDep,
-#         offset: int = Query(0, ge=0, description="偏移量"),
-#         limit: int = Query(100, ge=1, le=500, description="每页数量")
-# ) -> Any:
-#     """
-#     获取用户列表
-#
-#     响应格式：
-#     {
-#         "code": "00000",
-#         "data": [
-#             {
-#                 "id": "用户ID",
-#                 "username": "用户名",
-#                 "nickname": "昵称",
-#                 "avatar": "头像",
-#                 "gender": 1,
-#                 "mobile": "手机号",
-#                 "email": "邮箱",
-#                 "deptName": "部门名称",
-#                 "roleNames": "角色名称",
-#                 "createTime": "创建时间",
-#                 "status": 1
-#             }
-#         ],
-#         "msg": "获取用户列表成功"
-#     }
-#     """
-#     try:
-#         users = await user_service.list_users_frontend(offset=offset, limit=limit)
-#         return ApiResponse.success(data=users, msg="获取用户列表成功")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
 
 
 @router.get(
@@ -367,47 +323,6 @@ async def get_user(
     return await user_service.get_user_by_id(user_id)
 
 # 5. 分页查询用户列表（参数顺序修正）
-# @router.get(
-#     "/",
-#     response_model=UserList,
-#     summary="查询用户列表",
-#     description="需要【user:read】权限，仅超级用户可访问"
-# )
-# @permission(
-#     code=PermissionCode.USER_READ.value,
-#     name="用户查询权限",
-#     description="查看用户列表"
-# )
-# @inject
-# async def list_users(
-#     _superuser: CurrentSuperuser,  # 无默认值（前）
-#     user_service: UserServiceDep,  # 无默认值
-#     _ = Depends(permission_checker(PermissionCode.USER_READ.value)),  # 有默认值（后）
-#     offset: int = Query(0, ge=0),  # 查询参数（有默认值，最后）
-#     limit: int = Query(100, ge=1, le=500)  # 查询参数（有默认值，最后）
-# ) -> Any:
-#     return await user_service.list_users(offset, limit)
-
-
-# from typing import Optional, Any
-# from datetime import date
-# from fastapi import Query
-
-
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import date
-
-
-class UserQueryParams(BaseModel):
-    """用户查询参数模型"""
-    pageNum: int = Field(default=1, ge=1, description="页码")
-    pageSize: int = Field(default=10, ge=1, le=100, description="每页数量")
-    status: Optional[int] = Field(None, description="用户状态: 0=禁用, 1=启用")
-    keywords: Optional[str] = Field(None, description="搜索关键词")
-    create_time_start: Optional[date] = Field(None, description="创建时间开始")
-    create_time_end: Optional[date] = Field(None, description="创建时间结束")
-
 @router.get(
     "/",
     response_model=ApiResponse,
@@ -422,7 +337,14 @@ class UserQueryParams(BaseModel):
 @inject
 async def read_users(
         user_service: UserServiceDep,
-        query_params: UserQueryParams = Depends()
+        # 分页参数
+        pageNum: int = Query(1, description="页码", ge=1),
+        pageSize: int = Query(10, description="每页数量", ge=1, le=100),
+        # 新增过滤参数
+        status: Optional[int] = Query(None, description="用户状态（1=启用，0=禁用）"),
+        createTime0: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
+        createTime1: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
+        keywords: Optional[str] = Query(None, description="搜索关键词（匹配用户名/昵称/手机号）")
 ) -> Any:
     """
     获取用户列表
@@ -456,19 +378,12 @@ async def read_users(
     }
     """
     try:
-        pageNum = query_params.pageNum
-        pageSize = query_params.pageSize
-        offset = (query_params.pageNum - 1) * query_params.pageSize
-        status = query_params.status
-        keywords = query_params.keywords
-        createTime0 = query_params.create_time_start
-        createTime1 = query_params.create_time_end
-
         print("🔵 ===== 后端用户列表接口被调用 =====")
         print(f"📋 查询参数: pageNum={pageNum}, pageSize={pageSize}, status={status}, "
               f"createTime0={createTime0}, createTime1={createTime1}, keywords={keywords}")
 
         # 计算分页偏移量
+        offset = (pageNum - 1) * pageSize
 
         # 构建过滤条件
         filters = {}
@@ -506,276 +421,6 @@ async def read_users(
         print(f"❌ 获取用户列表失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
 
-
-
-
-# @router.get(
-#     "/",
-#     response_model=ApiResponse,
-#     summary="获取用户列表",
-#     description="分页获取用户列表，支持状态、时间范围、关键词过滤，返回前端友好格式"
-# )
-# @permission(
-#     code=PermissionCode.USER_READ.value,
-#     name="用户查询权限",
-#     description="查看用户详情"
-# )
-# @inject
-# async def read_users(
-#         user_service: UserServiceDep,
-#         # 分页参数
-#         pageNum: int = Query(1, description="页码", ge=1),
-#         pageSize: int = Query(10, description="每页数量", ge=1, le=100),
-#         # 新增过滤参数
-#         status: Optional[int] = Query(None, description="用户状态（1=启用，0=禁用）"),
-#         createTime0: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
-#         createTime1: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
-#         keywords: Optional[str] = Query(None, description="搜索关键词（匹配用户名/昵称/手机号）")
-# ) -> Any:
-#     """
-#     获取用户列表
-#
-#     响应格式：
-#     {
-#         "code": "00000",
-#         "data": {
-#             "data": [
-#                 {
-#                     "id": "用户ID",
-#                     "username": "用户名",
-#                     "nickname": "昵称",
-#                     "avatar": "头像",
-#                     "gender": 1,
-#                     "mobile": "手机号",
-#                     "email": "邮箱",
-#                     "deptName": "部门名称",
-#                     "roleNames": "角色名称",
-#                     "createTime": "创建时间",
-#                     "status": 1
-#                 }
-#             ],
-#             "page": {
-#                 "total": 100,
-#                 "pageNum": 1,
-#                 "pageSize": 10
-#             }
-#         },
-#         "msg": "获取用户列表成功"
-#     }
-#     """
-#     try:
-#         print("🔵 ===== 后端用户列表接口被调用 =====")
-#         print(f"📋 查询参数: pageNum={pageNum}, pageSize={pageSize}, status={status}, "
-#               f"createTime0={createTime0}, createTime1={createTime1}, keywords={keywords}")
-#
-#         # 计算分页偏移量
-#         offset = (pageNum - 1) * pageSize
-#
-#         # 构建过滤条件
-#         filters = {}
-#         if status is not None:
-#             filters["status"] = status
-#         if createTime0 is not None:
-#             filters["create_time_start"] = createTime0
-#         if createTime1 is not None:
-#             filters["create_time_end"] = createTime1
-#         if keywords and keywords.strip():
-#             filters["keywords"] = keywords.strip()
-#
-#         # 调用服务层
-#         users, total = await user_service.list_users_frontend(
-#             offset=offset,
-#             limit=pageSize,
-#             filters=filters
-#         )
-#
-#         print(f"✅ 查询成功: 返回{len(users)}条数据，总数{total}条")
-#
-#         return JSONResponse({
-#             "code": "00000",
-#             "data": {
-#                 "data": users,  # 用户列表数据
-#                 "page": {  # 分页信息
-#                     "total": total,
-#                     "pageNum": pageNum,
-#                     "pageSize": pageSize
-#                 }
-#             },
-#             "msg": "操作成功"
-#         })
-#     except Exception as e:
-#         print(f"❌ 获取用户列表失败: {str(e)}")
-#         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
-
-# @router.get(
-#     "/",
-#     response_model=ApiResponse,
-#     summary="获取用户列表",
-#     description="分页获取用户列表，返回前端友好格式"
-# )
-# @permission(
-#     code=PermissionCode.USER_READ.value,
-#     name="用户查询权限",
-#     description="查看用户详情"
-# )
-# @inject
-# async def read_users(
-#         # _superuser: CurrentSuperuser,
-#         user_service: UserServiceDep,
-#         pageNum: int = Query(1, description="页码", ge=1),  # 添加 pageNum 参数
-#         pageSize: int = Query(10, description="每页数量", ge=1, le=100),  # 添加 pageSize 参数
-# ) -> Any:
-#     """
-#     获取用户列表
-#
-#     响应格式：
-#     {
-#         "code": "00000",
-#         "data": [
-#             {
-#                 "id": "用户ID",
-#                 "username": "用户名",
-#                 "nickname": "昵称",
-#                 "avatar": "头像",
-#                 "gender": 1,
-#                 "mobile": "手机号",
-#                 "email": "邮箱",
-#                 "deptName": "部门名称",
-#                 "roleNames": "角色名称",
-#                 "createTime": "创建时间",
-#                 "status": 1
-#             }
-#         ],
-#         "msg": "获取用户列表成功"
-#     }
-#     """
-#     try:
-#         print("🔵 ===== 后端用户列表接口被调用1 =====")
-#         offset = (pageNum - 1) * pageSize
-#         users = await user_service.list_users_frontend(offset=offset, limit=pageSize)
-#
-#         return JSONResponse({
-#             "code": "00000",
-#             "data": {
-#                 "data": users,  # 注意这里是数组
-#                 "page": {  # // 必须有 page 对象
-#                     "total": 10,
-#                     "pageNum": 1,
-#                     "pageSize": 10
-#                 }
-#             },
-#             "msg": "操作成功"
-#         })
-#         # return ApiResponse.success(data=users, msg="获取用户列表成功")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
-
-
-from fastapi import Request
-from app.api.deps import SyncSessionDep as SessionDep
-from datetime import datetime, date
-from fastapi.responses import JSONResponse
-@router.get(
-    "/abc",
-    # dependencies=[Depends(get_current_active_superuser)],  # 暂时注释掉
-    # response_model=UsersPublic,
-)
-def read_users1(
-        request: Request,  # 添加Request参数来获取头部信息
-        current_user: CurrentUser,  # 添加当前用户验证
-        pageNum: int = Query(1, description="页码", ge=1),  # 添加 pageNum 参数
-        pageSize: int = Query(10, description="每页数量", ge=1, le=100),  # 添加 pageSize 参数
-
-) -> Any:
-    """
-    获取用户列表 - 支持前端分页参数
-    """
-    # 添加详细调试信息
-    print("🔵 ===== 后端用户列表接口被调用 =====")
-    print(f"🔵 请求路径: {request.url}")
-    print(f"🔵 请求方法: {request.method}")
-    print(f"🔵 查询参数: pageNum={pageNum}, pageSize={pageSize}")
-
-    # 检查Authorization头
-    auth_header = request.headers.get("authorization")
-    if auth_header:
-        print(f"✅ 收到Authorization头: {auth_header[:50]}...")
-    else:
-        print("❌ 未收到Authorization头！")
-        print(f"🔵 所有请求头: {dict(request.headers)}")
-
-    # # 检查用户是否是超级用户
-    # if not current_user.is_superuser:
-    #     print(f"❌ 权限不足: 当前用户 {current_user.email} 不是超级用户")
-    #     raise HTTPException(
-    #         status_code=403,
-    #         detail="需要管理员权限"
-    #     )
-    #
-    # print(f"✅ 用户认证成功: {current_user.email} (ID: {current_user.id})")
-
-    # 计算 skip
-    skip = (pageNum - 1) * pageSize
-
-    # count_statement = select(func.count()).select_from(User)
-    # count = session.exec(count_statement).one()
-    #
-    # statement = select(User).offset(skip).limit(pageSize)
-    # users = session.exec(statement).all()
-
-    # print(f"✅ 查询成功: 总数={count}, 本次返回={len(users)}")
-    print("🔵 ==================================")
-
-    # return UsersPublic(data=users, count=count)
-    # user = users[0]
-    user_data = {
-            "id": 123456,
-            "username": "wt",
-            "nickname": "wt hahah",
-            "mobile": "",
-            "gender": 0,
-            "avatar": "",
-            "email": "wt@wt.com",
-            "status": 1,
-            "deptName": "",
-            "roleNames": "",
-            "createTime": datetime.utcnow().isoformat()
-        }
-    list = [user_data, user_data]
-    return JSONResponse({
-        "code": "00000",
-        "data": {
-            "data":list,  # 注意这里是数组
-            "page": {        #// 必须有 page 对象
-              "total": 10,
-              "pageNum": 1,
-              "pageSize": 10
-            }
-        },
-        "msg": "操作成功"
-    })
-
-# # 5. 分页查询用户列表（参数顺序修正）
-# @router.get(
-#     "/",
-#     response_model=UserList,
-#     summary="查询用户列表",
-#     description="需要【user:read】权限，仅超级用户可访问"
-# )
-# @permission(
-#     code=PermissionCode.USER_READ.value,
-#     name="用户查询权限",
-#     description="查看用户列表"
-# )
-# @inject
-# async def list_users(
-#     _superuser: CurrentSuperuser,  # 无默认值（前）
-#     user_service: UserServiceDep,  # 无默认值
-#     _ = Depends(permission_checker(PermissionCode.USER_READ.value)),  # 有默认值（后）
-#     offset: int = Query(0, ge=0),  # 查询参数（有默认值，最后）
-#     limit: int = Query(100, ge=1, le=500)  # 查询参数（有默认值，最后）
-# ) -> Any:
-#     return await user_service.list_users(offset, limit)
 
 # 6. 更新用户信息（仅超级用户）
 @router.put(
