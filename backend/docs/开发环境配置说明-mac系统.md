@@ -284,7 +284,7 @@ from pathlib import Path
 from app.api.main import api_router
 from app.core.config import settings
 
-
+ 
 def custom_generate_unique_id(route: APIRoute) -> str:
     """增强路由ID生成函数，处理无tags情况"""
     if not route.tags:

@@ -322,12 +322,14 @@ async def get_user(
 ) -> Any:
     return await user_service.get_user_by_id(user_id)
 
+
 # 5. 分页查询用户列表（参数顺序修正）
+# 分页查询用户列表（参数顺序修正）- 重构版
 @router.get(
     "/",
     response_model=ApiResponse,
     summary="获取用户列表",
-    description="分页获取用户列表，支持状态、时间范围、关键词过滤，返回前端友好格式"
+    description="分页获取用户列表，支持多种过滤条件，返回前端友好格式"
 )
 @permission(
     code=PermissionCode.USER_READ.value,
@@ -340,63 +342,97 @@ async def read_users(
         # 分页参数
         pageNum: int = Query(1, description="页码", ge=1),
         pageSize: int = Query(10, description="每页数量", ge=1, le=100),
-        # 新增过滤参数
-        status: Optional[int] = Query(None, description="用户状态（1=启用，0=禁用）"),
-        createTime0: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
-        createTime1: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
-        keywords: Optional[str] = Query(None, description="搜索关键词（匹配用户名/昵称/手机号）")
+        # 过滤参数 - 支持多种查询方式
+        status: Optional[int] = Query(None, description="用户状态（精确匹配）"),
+        status__in: Optional[str] = Query(None, description="用户状态（多选），格式：1,0"),
+        username: Optional[str] = Query(None, description="用户名（精确匹配）"),
+        username__like: Optional[str] = Query(None, description="用户名（模糊匹配）"),
+        nickname__like: Optional[str] = Query(None, description="昵称（模糊匹配）"),
+        keywords: Optional[str] = Query(None, description="综合搜索（用户名/昵称/邮箱/手机号）"),
+        gender__eq: Optional[int] = Query(None, description="性别（精确匹配）"),
+        gender__range: Optional[str] = Query(None, description="性别范围，格式：1-2"),
+        # create_time_start: Optional[date] = Query(None, description="创建时间起始"),
+        # create_time_end: Optional[date] = Query(None, description="创建时间结束"),
+        create_time_start: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
+        create_time_end: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
+        mobile__like: Optional[str] = Query(None, description="手机号模糊搜索"),
+        email__like: Optional[str] = Query(None, description="邮箱模糊搜索")
 ) -> Any:
     """
-    获取用户列表
+    获取用户列表 - 重构版（支持策略模式查询构建器）
 
-    响应格式：
-    {
-        "code": "00000",
-        "data": {
-            "data": [
-                {
-                    "id": "用户ID",
-                    "username": "用户名",
-                    "nickname": "昵称",
-                    "avatar": "头像",
-                    "gender": 1,
-                    "mobile": "手机号",
-                    "email": "邮箱",
-                    "deptName": "部门名称",
-                    "roleNames": "角色名称",
-                    "createTime": "创建时间",
-                    "status": 1
-                }
-            ],
-            "page": {
-                "total": 100,
-                "pageNum": 1,
-                "pageSize": 10
-            }
-        },
-        "msg": "获取用户列表成功"
-    }
+    支持多种查询模式：
+    1. 精确查询：status=1, username="admin"
+    2. 模糊查询：username__like="admi", nickname__like="管理"
+    3. 多字段搜索：keywords="admin"
+    4. 范围查询：gender__range="1-2", create_time_start/end
+    5. IN查询：status__in="1,0"
     """
     try:
-        print("🔵 ===== 后端用户列表接口被调用 =====")
-        print(f"📋 查询参数: pageNum={pageNum}, pageSize={pageSize}, status={status}, "
-              f"createTime0={createTime0}, createTime1={createTime1}, keywords={keywords}")
+        print("🔵 ===== 后端用户列表接口被调用（重构版）=====")
 
         # 计算分页偏移量
         offset = (pageNum - 1) * pageSize
 
-        # 构建过滤条件
+        # 构建过滤字典（使用查询构建器支持的格式）
         filters = {}
+
+        # 精确查询（转换为查询构建器格式）
         if status is not None:
-            filters["status"] = status
-        if createTime0 is not None:
-            filters["create_time_start"] = createTime0
-        if createTime1 is not None:
-            filters["create_time_end"] = createTime1
+            filters["status__eq"] = status
+
+        if username is not None:
+            filters["username__eq"] = username
+
+        # 模糊查询
+        if username__like is not None:
+            filters["username__like"] = username__like
+
+        if nickname__like is not None:
+            filters["nickname__like"] = nickname__like
+
+        if mobile__like is not None:
+            filters["mobile__like"] = mobile__like
+
+        if email__like is not None:
+            filters["email__like"] = email__like
+
+        # 多字段关键词搜索（优先使用keywords，如果同时传了keywords和具体字段，以keywords为准）
         if keywords and keywords.strip():
             filters["keywords"] = keywords.strip()
 
-        # 调用服务层
+        # 范围查询
+        if gender__eq is not None:
+            filters["gender__eq"] = gender__eq
+
+        if gender__range:
+            try:
+                min_val, max_val = map(int, gender__range.split("-"))
+                filters["gender__range"] = {"min": min_val, "max": max_val}
+            except ValueError:
+                pass
+
+        # 创建时间范围（兼容旧参数名和查询构建器格式）
+        time_range = {}
+        if create_time_start:
+            time_range["start"] = create_time_start
+        if create_time_end:
+            time_range["end"] = create_time_end
+
+        if time_range:
+            filters["create_time_range"] = time_range
+
+        # IN查询
+        if status__in:
+            try:
+                status_list = [int(s.strip()) for s in status__in.split(",")]
+                filters["status__in"] = status_list
+            except ValueError:
+                pass
+
+        print(f"📋 查询参数重构后: pageNum={pageNum}, pageSize={pageSize}, filters={filters}")
+
+        # 调用服务层（重构后的方法）
         users, total = await user_service.list_users_frontend(
             offset=offset,
             limit=pageSize,
@@ -408,8 +444,8 @@ async def read_users(
         return JSONResponse({
             "code": "00000",
             "data": {
-                "data": users,  # 用户列表数据
-                "page": {  # 分页信息
+                "data": users,
+                "page": {
                     "total": total,
                     "pageNum": pageNum,
                     "pageSize": pageSize
@@ -417,8 +453,11 @@ async def read_users(
             },
             "msg": "操作成功"
         })
+
     except Exception as e:
         print(f"❌ 获取用户列表失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
 
 

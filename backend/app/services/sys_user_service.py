@@ -182,125 +182,54 @@ class UserService:
 
     from typing import List, Dict, Optional, Any, Tuple
 
-
     async def list_users_frontend(
             self,
             offset: int = 0,
             limit: int = 100,
             filters: Optional[Dict[str, Any]] = None
-    ) -> Tuple[List[Dict[str, Any]], int]:  # 修改返回类型为元组
+    ) -> Tuple[List[Dict[str, Any]], int]:
         """
-        获取用户列表（前端格式）
+        获取用户列表（前端格式）- 重构版
 
-        支持分页和过滤
+        支持多种过滤条件：
+        - status: 状态过滤
+        - username__like: 用户名模糊搜索
+        - nickname__like: 昵称模糊搜索
+        - keywords: 多字段关键词搜索
+        - create_time_range: 创建时间范围
+        - status__in: 状态IN查询
 
-        Args:
-            offset: 偏移量
-            limit: 每页数量
-            filters: 过滤条件，包含：
-                - status: int（用户状态）
-                - create_time_start: date（创建时间起始）
-                - create_time_end: date（创建时间结束）
-                - keywords: str（搜索关键词）
-
-        Returns:
-            元组: (前端格式的用户列表, 符合条件的用户总数)
+        示例：
+        list_users_frontend(
+            offset=0,
+            limit=20,
+            filters={
+                "status__eq": 1,
+                "keywords": "admin",
+                "create_time_range": {
+                    "start": datetime(2024, 1, 1),
+                    "end": datetime(2024, 12, 31)
+                }
+            }
+        )
         """
         # 初始化过滤参数
         filters = filters or {}
 
-        # 提取过滤条件
-        status = filters.get("status")
-        create_time_start = filters.get("create_time_start")
-        create_time_end = filters.get("create_time_end")
-        keywords = filters.get("keywords")
+        print(f"🔍 服务层过滤条件（重构版）: {filters}")
 
-        print(f"🔍 服务层过滤条件: status={status}, "
-              f"create_time_start={create_time_start}, "
-              f"create_time_end={create_time_end}, "
-              f"keywords={keywords}")
-
-        # 1. 查询符合条件的用户列表（带过滤条件）
-        users = await self.user_repository.list_all(
+        # 方法1：使用新的list_all_with_count方法（推荐，性能更好）
+        users, total = await self.user_repository.list_all_with_count(
             offset=offset,
             limit=limit,
-            status=status,
-            create_time_start=create_time_start,
-            create_time_end=create_time_end,
-            keywords=keywords
-        )
-
-        # 2. 查询符合条件的用户总数（带过滤条件）
-        total = await self.user_repository.count_total(
-            status=status,
-            create_time_start=create_time_start,
-            create_time_end=create_time_end,
-            keywords=keywords
+            **filters
         )
 
         print(f"📊 服务层结果: 分页查询{len(users)}条，总数{total}条")
 
-        # 3. 转换为前端格式
+        # 转换为前端格式
         return user_mapper.to_users_list(users), total
 
-
-    # async def list_users_frontend(
-    #         self,
-    #         offset: int = 0,
-    #         limit: int = 100,
-    #         filters: Optional[Dict[str, Any]] = None
-    # ) -> List[Dict[str, Any]]:
-    #     """
-    #     获取用户列表（前端格式）
-    #
-    #     支持分页和过滤
-    #
-    #     Args:
-    #         offset: 偏移量
-    #         limit: 每页数量
-    #         filters: 过滤条件
-    #
-    #     Returns:
-    #         前端格式的用户列表
-    #     """
-    #     # 获取原始数据，包含部门和角色
-    #     users = await self.user_repository.list_all(offset=offset, limit=limit)
-    #
-    #     # 批量转换
-    #     return user_mapper.to_users_list(users)
-    #     # ==================== 需要清理的垃圾代码 ====================
-    #     # 获取原始数据
-    #     # users = await self.user_repository.list_all(offset=offset, limit=limit)
-    #     #
-    #     # # 批量转换
-    #     # results = []
-    #     # for user in users:
-    #     #     user_data = {
-    #     #         "id": str(user.id),
-    #     #         "username": user.username,
-    #     #         "nickname": user.nickname,
-    #     #         "avatar": user.avatar,
-    #     #         "gender": user.gender,
-    #     #         "mobile": user.mobile,
-    #     #         "email": user.email,
-    #     #         "status": user.status,
-    #     #         "createTime": user.create_time.isoformat() if user.create_time else None,
-    #     #         "roleNames": "",
-    #     #         "deptName": ""
-    #     #     }
-    #     #
-    #     #     # 添加角色名称
-    #     #     if hasattr(user, 'roles') and user.roles:
-    #     #         role_names = [role.name for role in user.roles if hasattr(role, 'name')]
-    #     #         user_data['roleNames'] = ', '.join(role_names)
-    #     #
-    #     #     # 添加部门名称
-    #     #     if hasattr(user, 'dept') and user.dept and hasattr(user.dept, 'name'):
-    #     #         user_data['deptName'] = user.dept.name
-    #     #
-    #     #     results.append(user_data)
-    #     #
-    #     # return results
 
     async def list_users(self, offset: int = 0, limit: int = 100) -> UserList:
         """
@@ -486,126 +415,3 @@ class UserService:
             return Message(message=f"用户 '{user_id}' 删除成功")
 
     # ==================== 辅助方法 ====================
-
-    # ==================== 需要清理的垃圾代码 ====================
-    # async def _build_user_response(self, user: SysUser) -> Dict[str, Any]:
-    #     """
-    #     构建通用的用户响应数据
-    #
-    #     用于需要返回用户信息的场景，如创建、更新用户
-    #     """
-    #     response_data = {
-    #         "id": str(user.id),
-    #         "username": user.username,
-    #         "nickname": user.nickname,
-    #         "avatar": user.avatar,
-    #         "gender": user.gender,
-    #         "mobile": user.mobile,
-    #         "email": user.email,
-    #         "status": user.status,
-    #         "createTime": user.create_time.isoformat() if user.create_time else None,
-    #     }
-    #
-    #     # 添加角色信息（如果已加载）
-    #     if hasattr(user, 'roles') and user.roles:
-    #         role_codes = [role.code for role in user.roles if hasattr(role, 'code')]
-    #         response_data["roles"] = role_codes
-    #
-    #         # 提取权限
-    #         permission_codes = set()
-    #         for role in user.roles:
-    #             if hasattr(role, 'permissions'):
-    #                 for perm in role.permissions:
-    #                     if hasattr(perm, 'code'):
-    #                         permission_codes.add(perm.code)
-    #         response_data["perms"] = list(permission_codes)
-    #
-    #     return response_data
-
-
-    # async def _user_to_dict(self, user: SysUser) -> Dict[str, Any]:
-    #     """
-    #     将ORM用户对象转换为字典
-    #
-    #     提取所有需要的字段，便于后续转换
-    #
-    #     Args:
-    #         user: SysUser ORM对象
-    #
-    #     Returns:
-    #         用户数据字典
-    #     """
-    #     # 基础字段
-    #     user_dict = {
-    #         'id': user.id,
-    #         'username': user.username,
-    #         'nickname': user.nickname,
-    #         'avatar': user.avatar,
-    #         'gender': user.gender,
-    #         'mobile': user.mobile,
-    #         'status': user.status,
-    #         'email': user.email,
-    #         'dept_id': user.dept_id,
-    #         'create_time': user.create_time,
-    #         'create_by': user.create_by,
-    #         'update_time': user.update_time,
-    #         'update_by': user.update_by,
-    #         'roles': user.roles or [],
-    #     }
-    #
-    #     # 提取角色和权限
-    #     if user.roles:
-    #         role_codes = []
-    #         permission_codes = set()
-    #
-    #         for role in user.roles:
-    #             if hasattr(role, 'code'):
-    #                 role_codes.append(role.code)
-    #
-    #             # 提取权限
-    #             if hasattr(role, 'permissions'):
-    #                 for perm in role.permissions:
-    #                     if hasattr(perm, 'code'):
-    #                         permission_codes.add(perm.code)
-    #
-    #         user_dict['role_codes'] = role_codes
-    #         user_dict['permission_codes'] = list(permission_codes)
-    #     else:
-    #         user_dict['role_codes'] = []
-    #         user_dict['permission_codes'] = []
-    #
-    #     return user_dict
-    #
-    # async def _convert_user_to_frontend(self, user: SysUser) -> Dict[str, Any]:
-    #     """
-    #     转换用户数据为前端格式（统一出口）
-    #
-    #     所有返回前端的数据都经过此方法处理
-    #
-    #     Args:
-    #         user: SysUser ORM对象
-    #
-    #     Returns:
-    #         前端格式的用户数据
-    #     """
-    #     # 转换为字典
-    #     print("========转换为字典==========")
-    #     user_dict = await self._user_to_dict(user)
-    #
-    #     # 应用字段映射
-    #     print("========应用字段映射==========")
-    #     return user_mapper.convert_user_to_frontend(user_dict)
-    #
-    # async def _convert_frontend_to_backend(self, frontend_data: Dict[str, Any]) -> Dict[str, Any]:
-    #     """
-    #     转换前端数据为后端格式（统一入口）
-    #
-    #     所有接收的前端数据都经过此方法处理
-    #
-    #     Args:
-    #         frontend_data: 前端数据
-    #
-    #     Returns:
-    #         后端格式的数据
-    #     """
-    #     return user_mapper.convert_frontend_to_backend(frontend_data)

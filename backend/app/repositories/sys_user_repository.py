@@ -3,191 +3,211 @@
 backend/app/db/repositories/user_repository.py
 上次更新：2025/12/1
 """
+"""
+用户模块数据访问层 - 重构版（使用查询构建器）
+"""
 from sqlmodel import select, delete, insert
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.orm import sessionmaker, selectinload  # selectinload用于预加载
+from sqlalchemy.orm import sessionmaker, selectinload
 from contextlib import asynccontextmanager
-from typing import Optional, List, AsyncGenerator
-
-from app.models import SysUser, sys_user_role, SysRole  # 【新增】导入Role模型，用于深度预加载
-from app.schemas.sys_user import UserCreateWithHash
-
-from sqlalchemy import select, func, or_
-from sqlalchemy.orm import selectinload
+from typing import Optional, List, AsyncGenerator, Tuple, Dict, Any
 from datetime import datetime
+
+from app.models import SysUser, sys_user_role, SysRole
+from app.schemas.sys_user import UserCreateWithHash
+from sqlalchemy import select as sql_select, func, or_
+from sqlalchemy.orm import selectinload
+
+# 导入查询构建器
+from app.core.query_builder import create_user_query_builder
+
 
 class UserRepository:
     """
-    标准Repo层实现：
+    标准Repo层实现（使用查询构建器）：
     1. 注入会话工厂，自主创建事务会话
-    2. 事务上下文统一管理会话生命周期（创建→提交/回滚→关闭）
-    3. 纯DB操作，无业务逻辑
+    2. 事务上下文统一管理会话生命周期
+    3. 使用查询构建器实现灵活的查询条件
     """
-    # 注入会话工厂（从DI容器获取）
+
     def __init__(self, async_session_factory: sessionmaker):
-        self.async_session_factory = async_session_factory  # 会话工厂（单例）
+        self.async_session_factory = async_session_factory
 
     # ------------------------------
-    # 核心：标准异步事务上下文（最佳实践2核心）
+    # 核心：标准异步事务上下文
     # ------------------------------
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[AsyncSession, None]:
-        session: AsyncSession = self.async_session_factory()  # 新建会话
+        session: AsyncSession = self.async_session_factory()
         try:
-            await session.begin()  # 开启事务
-            yield session  # 传递会话给Service
-            await session.commit()  # 无异常则提交
+            await session.begin()
+            yield session
+            await session.commit()
         except Exception as e:
-            await session.rollback()  # 异常则回滚
-            raise e  # 抛出异常给Service处理（业务层统一捕获）
+            await session.rollback()
+            raise e
         finally:
-            await session.close()  # 强制关闭会话，无残留
+            await session.close()
 
     # ------------------------------
-    # 查询类方法（【核心修复】添加深度预加载：User.roles → Role.permissions）
+    # 查询类方法（使用查询构建器重构）
     # ------------------------------
-    async def get_by_email(self, email: str) -> Optional[SysUser]:
-        """按邮箱查询用户（深度预加载：角色+角色的权限）"""
+    async def get_by_id(self, user_id: str) -> Optional[SysUser]:
+        """按ID查询用户（深度预加载）"""
         async with self.transaction() as session:
             stmt = (
                 select(SysUser)
-                # 【修复】深度预加载：先加载User.roles，再加载每个Role的permissions
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
-                .where(SysUser.email == email)
+                .where(SysUser.id == user_id)
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    # ------------------------------
-    # 查询类方法（【核心修复】添加深度预加载：User.roles → Role.permissions）
-    # ------------------------------
     async def get_by_username(self, username: str) -> Optional[SysUser]:
-        """按邮箱查询用户（深度预加载：角色+角色的权限）"""
+        """按用户名查询用户（深度预加载）"""
         async with self.transaction() as session:
             stmt = (
                 select(SysUser)
-                # 【修复】深度预加载：先加载User.roles，再加载每个Role的permissions
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
                 .where(SysUser.username == username)
             )
             result = await session.execute(stmt)
             return result.scalars().first()
 
-    async def get_by_id(self, user_id: str) -> Optional[SysUser]:
-        """按ID查询用户（深度预加载：角色+角色的权限）"""
-        print("========开始get_by_id==========")
+    async def get_by_email(self, email: str) -> Optional[SysUser]:
+        """按邮箱查询用户（深度预加载）"""
         async with self.transaction() as session:
             stmt = (
                 select(SysUser)
-                # 【修复】深度预加载
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
-                .where(SysUser.id == user_id)
+                .where(SysUser.email == email)
             )
-            print("========开始 result = await session.execute(stmt)==========")
             result = await session.execute(stmt)
-
-            print("========开始 return result.scalars().first()==========")
             return result.scalars().first()
 
     async def list_all(
             self,
             offset: int = 0,
             limit: int = 100,
-            status: Optional[int] = None,
-            create_time_start: Optional[datetime] = None,
-            create_time_end: Optional[datetime] = None,
-            keywords: Optional[str] = None
+            **filters  # 接收任意过滤参数
     ) -> List[SysUser]:
-        """分页查询用户列表（深度预加载：角色+角色的权限）"""
+        """
+        分页查询用户列表（使用查询构建器）
+
+        Args:
+            offset: 偏移量
+            limit: 每页数量
+            **filters: 过滤条件，支持：
+                - status: 状态过滤
+                - username__like: 用户名模糊搜索
+                - nickname__like: 昵称模糊搜索
+                - keywords: 多字段关键词搜索
+                - create_time_range: 创建时间范围
+                - status__in: 状态IN查询
+        """
         async with self.transaction() as session:
-            stmt = (
+            # 创建基础查询
+            base_query = (
                 select(SysUser)
-                # 【修复】深度预加载（关键修改，解决列表查询报错）
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
-                .offset(offset)
-                .limit(limit)
-                .order_by(SysUser.create_time.desc())  # 按创建时间倒序
             )
 
-            # 应用过滤条件
-            stmt = self._apply_filters(
-                stmt=stmt,
-                status=status,
-                create_time_start=create_time_start,
-                create_time_end=create_time_end,
-                keywords=keywords
-            )
+            # 使用查询构建器
+            query_builder = create_user_query_builder()
 
-            result = await session.execute(stmt)
+            # 添加过滤条件
+            query_builder.filter(**filters)
+
+            # 构建分页查询
+            query = query_builder.paginate(offset=offset, limit=limit).build_paginated(base_query)
+
+            result = await session.execute(query)
             return result.scalars().all()
 
-    async def count_total(
+    async def list_all_with_count(
             self,
-            status: Optional[int] = None,
-            create_time_start: Optional[datetime] = None,
-            create_time_end: Optional[datetime] = None,
-            keywords: Optional[str] = None
-    ) -> int:
-        """查询符合条件的用户总数（支持过滤条件）"""
+            offset: int = 0,
+            limit: int = 100,
+            **filters
+    ) -> Tuple[List[SysUser], int]:
+        """
+        一次查询返回数据和总数（使用窗口函数）
+
+        Args:
+            offset: 偏移量
+            limit: 每页数量
+            **filters: 过滤条件
+
+        Returns:
+            (用户列表, 总数)
+        """
+        async with self.transaction() as session:
+            # 使用窗口函数同时获取数据和总数
+            from sqlalchemy import over
+
+            # 创建基础查询（包含窗口函数）
+            stmt = (
+                select(
+                    SysUser,
+                    func.count(SysUser.id).over().label('total_count')
+                )
+                .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
+            )
+
+            # 使用查询构建器应用过滤条件
+            query_builder = create_user_query_builder()
+            query_builder.filter(**filters)
+
+            # 构建查询（不包含分页）
+            query = query_builder.build(stmt)
+
+            # 应用分页
+            query = query.offset(offset).limit(limit)
+
+            # 执行查询
+            result = await session.execute(query)
+            rows = result.all()
+
+            if not rows:
+                return [], 0
+
+            # 提取数据和总数
+            users = [row[0] for row in rows]
+            total = rows[0].total_count if rows[0].total_count else 0
+
+            return users, total
+
+    async def count_total(self, **filters) -> int:
+        """
+        统计符合条件的用户总数
+
+        Args:
+            **filters: 过滤条件
+        """
         async with self.transaction() as session:
             stmt = select(func.count(SysUser.id))
 
-            # 应用相同的过滤条件
-            stmt = self._apply_filters(
-                stmt=stmt,
-                status=status,
-                create_time_start=create_time_start,
-                create_time_end=create_time_end,
-                keywords=keywords
-            )
+            # 使用查询构建器应用过滤条件
+            query_builder = create_user_query_builder()
+            query_builder.filter(**filters)
+            query = query_builder.build(stmt)
 
-            result = await session.execute(stmt)
+            result = await session.execute(query)
             count = result.scalar() or 0
             return count
 
-    def _apply_filters(self, stmt, status, create_time_start, create_time_end, keywords):
-        """
-        通用过滤条件应用方法
-        """
-        # 状态过滤
-        if status is not None:
-            stmt = stmt.where(SysUser.status == status)
-
-        # 创建时间范围过滤
-        if create_time_start is not None:
-            stmt = stmt.where(SysUser.create_time >= create_time_start)
-        if create_time_end is not None:
-            # 结束时间需要包含当天
-            from datetime import timedelta
-            adjusted_end = create_time_end + timedelta(days=1) - timedelta(seconds=1)
-            stmt = stmt.where(SysUser.create_time <= adjusted_end)
-
-        # 关键字搜索（用户名、昵称、手机号）
-        if keywords and keywords.strip():
-            search_pattern = f"%{keywords.strip()}%"
-            stmt = stmt.where(
-                or_(
-                    SysUser.username.ilike(search_pattern),
-                    SysUser.nickname.ilike(search_pattern),
-                    SysUser.mobile.ilike(search_pattern)
-                )
-            )
-
-        return stmt
-
+    # ------------------------------
+    # 其他方法保持不变
+    # ------------------------------
     async def check_role_in_use(self, role_id: str) -> bool:
-        """检查角色是否被用户使用（用于角色删除校验）"""
+        """检查角色是否被用户使用"""
         async with self.transaction() as session:
             stmt = select(sys_user_role.c.user_id).where(sys_user_role.c.role_id == role_id).limit(1)
             result = await session.execute(stmt)
-            return result.scalars().first() is not None  # 有数据则返回True
+            return result.scalars().first() is not None
 
-    # ------------------------------
-    # 写操作类方法（无修改，保持原逻辑）
-    # ------------------------------
     async def create(self, user_in: UserCreateWithHash, session: AsyncSession) -> SysUser:
-        """创建用户（含角色分配，需在事务内执行）"""
-        # 1. 创建用户基础记录
+        """创建用户"""
         db_user = SysUser(
             username=user_in.username,
             email=user_in.email,
@@ -196,48 +216,38 @@ class UserRepository:
             is_active=user_in.is_active
         )
         session.add(db_user)
-        await session.flush()  # 刷新获取用户ID（不提交事务）
+        await session.flush()
 
-        # 2. 分配角色（若有）
         if user_in.role_ids:
             await self.assign_roles(db_user.id, user_in.role_ids, session)
 
-        # 3. 【修复】深度刷新：确保返回的用户包含角色和权限
-        await session.refresh(
-            db_user,
-            attribute_names=["roles"]  # 刷新roles，已通过预加载包含permissions
-        )
+        await session.refresh(db_user, attribute_names=["roles"])
         return db_user
 
     async def update(self, user: SysUser, session: AsyncSession) -> SysUser:
-        """更新用户信息（需在事务内执行）"""
+        """更新用户信息"""
         session.add(user)
-        # 【修复】深度刷新：确保更新后的数据包含角色和权限
-        await session.refresh(
-            user,
-            attribute_names=["roles"]  # 刷新roles，已包含permissions
-        )
+        await session.refresh(user, attribute_names=["roles"])
         return user
 
     async def clear_roles(self, user_id: str, session: AsyncSession):
-        """清空用户所有角色（需在事务内执行）"""
+        """清空用户所有角色"""
         stmt = delete(sys_user_role).where(sys_user_role.c.user_id == user_id)
         await session.execute(stmt)
 
     async def assign_roles(self, user_id: str, role_ids: List[str], session: AsyncSession):
-        """为用户分配角色（先清空再新增，需在事务内执行）"""
-        await self.clear_roles(user_id, session)  # 先清空现有角色
+        """为用户分配角色"""
+        await self.clear_roles(user_id, session)
         if role_ids:
-            # 批量插入角色关联
             stmt = insert(sys_user_role).values(
                 [{"user_id": user_id, "role_id": rid} for rid in role_ids]
             )
             await session.execute(stmt)
 
     async def delete(self, user_id: str, session: AsyncSession) -> bool:
-        """删除用户（需在事务内执行）"""
-        user = await self.get_by_id(user_id)  # 先查询用户是否存在
+        """删除用户"""
+        user = await self.get_by_id(user_id)
         if not user:
-            return False  # 不存在返回False
-        await session.delete(user)  # 存在则删除
-        return True  # 删除成功返回True
+            return False
+        await session.delete(user)
+        return True
