@@ -87,6 +87,13 @@ class DeptRepository:
             result = await session.execute(stmt)
             return result.scalars().all()
 
+    async def get_depts_by_tree_path_pattern(self, pattern: str) -> List[SysDept]:
+        """根据tree_path模式查找部门"""
+        async with self.transaction() as session:
+            stmt = select(SysDept).where(SysDept.tree_path.like(pattern))
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
     async def create(self, dept_data: Dict[str, Any], session: AsyncSession) -> SysDept:
         """创建部门"""
         db_dept = SysDept(**dept_data)

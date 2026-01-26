@@ -359,7 +359,9 @@ async def read_users(
         create_time_start: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
         create_time_end: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
         mobile__like: Optional[str] = Query(None, description="手机号模糊搜索"),
-        email__like: Optional[str] = Query(None, description="邮箱模糊搜索")
+        email__like: Optional[str] = Query(None, description="邮箱模糊搜索"),
+        # 新增部门过滤参数
+        deptId: Optional[str] = Query(None, description="部门ID，筛选该部门及其所有子部门的用户")
 ) -> Any:
     """
     获取用户列表 - 重构版（支持策略模式查询构建器）
@@ -380,6 +382,20 @@ async def read_users(
 
         # 构建过滤字典（使用查询构建器支持的格式）
         filters = {}
+
+        # 如果存在deptId，获取部门ID列表
+        if deptId:
+            try:
+                # 获取该部门及其所有子部门的ID
+                dept_ids = await dept_service.get_dept_and_sub_dept_ids(deptId)
+                if dept_ids:
+                    # 使用IN查询筛选部门
+                    filters["dept_id__in"] = dept_ids
+                    print(f"🔍 部门筛选条件: dept_id__in={dept_ids}")
+            except Exception as e:
+                print(f"⚠️ 获取部门ID列表失败: {str(e)}")
+                # 降级处理：只筛选当前部门
+                filters["dept_id__eq"] = deptId
 
         # 精确查询（转换为查询构建器格式）
         if status is not None:

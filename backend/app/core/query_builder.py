@@ -273,6 +273,7 @@ def create_user_query_builder() -> PaginatedQueryBuilder:
         "mobile": {"allow_equal": True, "allow_like": True},
         "status": {"allow_equal": True, "allow_range": True},
         "gender": {"allow_equal": True, "allow_range": True},
+        "dept_id": {"allow_equal": True, "allow_in": True},  # 新增dept_id字段
     })
 
     # 注册复杂策略
@@ -294,6 +295,12 @@ def create_user_query_builder() -> PaginatedQueryBuilder:
     builder.register_strategy(
         "status__in",
         InFilter(SysUser.status)
+    )
+
+    # 注册部门IN查询策略
+    builder.register_strategy(
+        "dept_id__in",
+        InFilter(SysUser.dept_id)
     )
 
     # 默认排序

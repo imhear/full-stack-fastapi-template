@@ -111,6 +111,38 @@ class DeptService:
             # 返回空字典，避免影响主流程
             return {}
 
+    async def get_dept_and_sub_dept_ids(self, dept_id: str) -> List[str]:
+        """
+        获取部门及其所有子部门的ID列表（优化版）
+
+        使用tree_path字段直接查找子部门，避免递归查询
+        """
+        try:
+            # 1. 首先获取目标部门
+            target_dept = await self.dept_repository.get_by_id(dept_id)
+            if not target_dept:
+                return [dept_id]  # 如果部门不存在，只返回当前ID
+
+            # 2. 构建tree_path模式
+            # tree_path格式如：0,11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222
+            # 我们要查找所有tree_path包含目标部门ID的部门
+            target_path_pattern = f"%{dept_id}%"
+
+            # 3. 查询所有子部门
+            sub_depts = await self.dept_repository.get_depts_by_tree_path_pattern(target_path_pattern)
+
+            # 4. 提取ID并去重
+            dept_ids = {dept_id}  # 包含目标部门
+            for dept in sub_depts:
+                dept_ids.add(str(dept.id))
+
+            return list(dept_ids)
+
+        except Exception as e:
+            print(f"获取部门子部门ID列表失败: {str(e)}")
+            # 降级：只返回当前部门ID
+            return [dept_id]
+
     async def get_dept_tree(self) -> List[Dict[str, Any]]:
         """
         获取完整的部门树
@@ -261,6 +293,9 @@ class DeptService:
                 "id": str(dept_id),
                 "name": dept.name
             }
+
+    # ==================== 辅助方法 ====================
+
 
     async def _is_circular_reference(self, dept_id: UUID, parent_id: UUID) -> bool:
         """检查是否形成循环引用"""
