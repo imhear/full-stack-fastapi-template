@@ -17,6 +17,10 @@ backend/app/main.py
 #  - 保留所有原有日志逻辑，仅调整路径变量，兼容宿主机挂载/Users/wutao/code/fastapi_demo/logs/local
 # 2025/12/26 新增：422请求体校验错误处理器，打印详细字段错误信息，定位修改密码接口422问题
 """
+# app/main.py
+# 在适当位置添加
+print("🔍 DEBUG: 启动部门服务依赖检查")
+
 import uuid
 import logging
 import os
@@ -239,6 +243,8 @@ def create_app() -> FastAPI:
         "app.api.v1.endpoints.users",  # 用户API模块（需注入Service）
         "app.api.v1.endpoints.login",  # 登录API
         "app.api.v1.endpoints.roles",  # 角色API
+        "app.api.v1.endpoints.menus",  # 新增菜单API
+        "app.api.v1.endpoints.depts",  # 新增部门API
         "app.api.deps"  # 认证依赖模块（需注入AuthService）
     ])
 
@@ -445,6 +451,9 @@ def create_app() -> FastAPI:
     # 10. 附加容器到app.state（便于后续访问）
     app.state.container = container
 
+
+
+
     return app
 
 # 导入全局reusable_oauth2（用于OpenAPI配置）
@@ -452,6 +461,7 @@ from app.core.security import reusable_oauth2
 
 # 创建应用实例
 app = create_app()
+
 
 # 启动日志（复用config配置，包含时区）
 logger.info(
@@ -477,3 +487,5 @@ if log_to_file_flag:
 
     except Exception as e:
         logger.error(f"❌ 日志目录可写性验证失败：{log_dir} | 错误：{str(e)}", extra={"request_id": "app_startup"})
+
+

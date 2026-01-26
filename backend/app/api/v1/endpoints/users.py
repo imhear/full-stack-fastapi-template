@@ -9,6 +9,8 @@ backend/app/api/v1/endpoints/users.py
 3. 统一响应：所有接口返回标准格式
 4. 错误处理：统一异常处理
 """
+import asyncio
+import time
 from fastapi import APIRouter, Depends, Query, HTTPException, Body, Path
 from dependency_injector.wiring import inject
 from typing import Any, List, Optional
@@ -28,7 +30,7 @@ from app.schemas.sys_user import (
 from app.enums.sys_permissions import PermissionCode
 from app.utils.permission_decorators import permission
 from app.utils.permission_checker import permission_checker
-from app.api.deps import CurrentSuperuser, CurrentUser, UserServiceDep
+from app.api.deps import CurrentSuperuser, CurrentUser, UserServiceDep, DeptServiceDep
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -339,6 +341,7 @@ async def get_user(
 @inject
 async def read_users(
         user_service: UserServiceDep,
+        dept_service: DeptServiceDep,
         # 分页参数
         pageNum: int = Query(1, description="页码", ge=1),
         pageSize: int = Query(10, description="每页数量", ge=1, le=100),
@@ -371,6 +374,7 @@ async def read_users(
     try:
         print("🔵 ===== 后端用户列表接口被调用（重构版）=====")
 
+        # ========== 1. 参数处理阶段（串行，计算量小） ==========
         # 计算分页偏移量
         offset = (pageNum - 1) * pageSize
 
@@ -431,15 +435,66 @@ async def read_users(
                 pass
 
         print(f"📋 查询参数重构后: pageNum={pageNum}, pageSize={pageSize}, filters={filters}")
+        # 记录开始时间（用于性能分析）
+        import time
+        start_time = time.time()
 
-        # 调用服务层（重构后的方法）
-        users, total = await user_service.list_users_frontend(
+        # ========== 2. 并行数据获取阶段 ==========
+        # 创建并行任务
+        user_future = user_service.list_users_frontend(
             offset=offset,
             limit=pageSize,
             filters=filters
         )
 
+        dept_future = dept_service.get_dept_options_map()
+
+        print(f"🚀 启动并行任务：用户查询 + 部门映射获取")
+
+        # 并行执行（关键优化点）
+        user_result, dept_map = await asyncio.gather(
+            user_future,
+            dept_future,
+            return_exceptions=True  # 确保单任务失败不影响其他任务
+        )
+
+        # 记录并行执行完成时间
+        parallel_time = time.time() - start_time
+        print(f"⏱️ 并行执行完成时间: {parallel_time:.3f}秒")
+
+        # ========== 3. 异常检查和结果处理 ==========
+        # 检查用户查询异常
+        if isinstance(user_result, Exception):
+            print(f"❌ 用户查询失败: {str(user_result)}")
+            raise user_result
+
+        # 检查部门映射异常
+        if isinstance(dept_map, Exception):
+            print(f"⚠️ 部门映射获取失败，用户数据仍返回: {str(dept_map)}")
+            dept_map = {}  # 降级处理：使用空映射
+
+        # 解包用户结果
+        users, total = user_result
+
         print(f"✅ 查询成功: 返回{len(users)}条数据，总数{total}条")
+        print(f"✅ 部门映射: 获取{len(dept_map)}个部门映射")
+
+        # ========== 4. 数据组装阶段（串行） ==========
+        # 补充部门名称
+        for user in users:
+            dept_id = user.get('deptId')
+            if dept_id and dept_id in dept_map:
+                user['deptName'] = dept_map[dept_id]
+            else:
+                user['deptName'] = None
+
+        # 计算总时间
+        total_time = time.time() - start_time
+        print(f"📊 总处理时间: {total_time:.3f}秒")
+
+        # 性能对比数据（用于调试）
+        if len(users) > 0:
+            print(f"📈 性能提升预估: 并行执行 {parallel_time:.3f}s vs 串行预估 {total_time:.3f}s")
 
         return JSONResponse({
             "code": "00000",

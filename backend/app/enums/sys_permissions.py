@@ -30,6 +30,12 @@ class PermissionCode(Enum):
     USER_UPDATE = ("user:update", "更新用户", "允许修改现有用户信息")
     USER_DELETE = ("user:delete", "删除用户", "允许从系统中删除用户")
 
+    # 用户管理权限
+    DEPT_READ = ("dept:read", "查询用户详情", "需要【user:read】权限，仅超级用户可访问")
+    DEPT_CREATE = ("dept:create", "创建用户", "允许在系统中创建新用户")
+    DEPT_UPDATE = ("dept:update", "更新用户", "允许修改现有用户信息")
+    DEPT_DELETE = ("dept:delete", "删除用户", "允许从系统中删除用户")
+
     # 角色管理权限
     ROLE_ASSIGN = ("role:assign", "角色分配", "为用户分配角色")
     ROLE_MANAGE = ("role:manage", "角色管理", "管理角色配置")
