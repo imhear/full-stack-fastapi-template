@@ -3,6 +3,8 @@
 backend/app/db/repositories/user_repository.py
 上次更新：2025/12/1
 """
+from app.core.exceptions import BadRequest, ResourceNotFound
+
 """
 用户模块数据访问层 - 重构版（使用查询构建器）
 """
@@ -61,6 +63,8 @@ class UserRepository:
                 .where(SysUser.id == user_id)
             )
             result = await session.execute(stmt)
+            if not result:
+                raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
             return result.scalars().first()
 
     async def get_by_username(self, username: str) -> Optional[SysUser]:
@@ -208,21 +212,47 @@ class UserRepository:
 
     async def create(self, user_in: UserCreateWithHash, session: AsyncSession) -> SysUser:
         """创建用户"""
-        db_user = SysUser(
-            username=user_in.username,
-            email=user_in.email,
-            hashed_password=user_in.hashed_password,
-            full_name=user_in.full_name,
-            is_active=user_in.is_active
-        )
-        session.add(db_user)
-        await session.flush()
 
-        if user_in.role_ids:
-            await self.assign_roles(db_user.id, user_in.role_ids, session)
+        try:
+            # 创建用户对象
+            db_user = SysUser(
+                username=user_in.username,
+                nickname=user_in.nickname,
+                gender=user_in.gender,
+                password=user_in.hashed_password,  # 存储加密后的密码
+                dept_id=user_in.dept_id,
+                mobile=user_in.mobile,
+                status=user_in.status,
+                email=user_in.email
+            )
 
-        await session.refresh(db_user, attribute_names=["roles"])
-        return db_user
+            session.add(db_user)
+            await session.flush()  # 获取生成的ID
+
+            # 分配角色（如果有）
+            if user_in.role_ids:
+                await self.assign_roles(db_user.id, user_in.role_ids, session)
+
+            # 刷新获取完整数据
+            await session.refresh(db_user, attribute_names=["roles"])
+
+            return db_user
+
+        except Exception as e:
+            # print(f"❌ 仓库层创建用户失败: {str(e)}")
+            # print(f"❌ 异常类型: {type(e)}")
+            #
+            # # 打印更详细的异常信息
+            # import traceback
+            # traceback.print_exc()
+
+            # 如果是唯一性约束冲突
+            if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                if "username" in str(e):
+                    raise BadRequest(detail=f"用户名 '{user_in.username}' 已存在")
+                elif "email" in str(e):
+                    raise BadRequest(detail=f"邮箱 '{user_in.email}' 已被注册")
+            raise
 
     async def update(self, user: SysUser, session: AsyncSession) -> SysUser:
         """更新用户信息"""

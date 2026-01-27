@@ -153,3 +153,41 @@ class RoleService:
             if not success:
                 raise ResourceNotFound(detail=f"Role '{role_id}' not found")
         return Message(message=f"Role '{role_id}' deleted successfully")
+
+    async def get_role_options(self) -> List[dict]:
+        """
+        获取角色下拉选项
+
+        返回格式：
+        [
+            {
+                "value": "角色ID字符串",
+                "label": "角色名称",
+                "tag": "角色编码"
+            }
+        ]
+        """
+        print("🔵 ===== RoleService.get_role_options 被调用 =====")
+
+        try:
+            # 获取启用状态的角色列表（status=1, is_deleted=0）
+            roles = await self.role_repository.get_options()
+
+            # 转换为前端需要的格式
+            options = []
+            for role in roles:
+                option = {
+                    "value": str(role.id),
+                    "label": role.name,
+                    "tag": role.code
+                }
+                options.append(option)
+
+            print(f"✅ 角色选项转换完成: 共 {len(options)} 个选项")
+            return options
+
+        except Exception as e:
+            print(f"❌ 获取角色选项失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise

@@ -76,11 +76,16 @@ async def get_dept_options(
 
         print(f"✅ 获取部门选项成功: 返回{len(dept_options)}个部门")
 
-        return JSONResponse({
-            "code": "00000",
-            "data": dept_options,
-            "msg": "获取部门选项成功"
-        })
+        # return JSONResponse({
+        #     "code": "00000",
+        #     "data": dept_options,
+        #     "msg": "获取部门选项成功"
+        # })
+        #
+        return ApiResponse.success(
+            data=dept_options,
+            msg="获取字典项选项成功"
+        )
 
     except Exception as e:
         print(f"❌ 获取部门选项失败: {str(e)}")

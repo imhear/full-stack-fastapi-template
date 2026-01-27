@@ -67,7 +67,7 @@ class RoleRepository:
                 .options(selectinload(SysRole.permissions))
                 .offset(offset)
                 .limit(limit)
-                .order_by(SysRole.created_at.desc())
+                .order_by(SysRole.create_time.desc())
             )
             result = await session.execute(stmt)
             return result.scalars().all()
@@ -157,3 +157,40 @@ class RoleRepository:
         # 注意：若按update方法优化查询，需确保role属于当前Session
         await session.delete(role)
         return True
+
+    async def get_options(self) -> List[SysRole]:
+        """
+        获取角色选项（启用状态且未删除的角色）
+
+        返回：
+        - 角色列表，包含 id, name, code 字段
+        """
+        print("🔵 ===== RoleRepository.get_options 被调用 =====")
+
+        try:
+            # async with self.async_db_session() as session:
+            async with self.transaction() as session:
+                # 构建查询：状态为启用(1)且未删除(0)的角色
+                stmt = (
+                    select(SysRole)
+                    .where(
+                        SysRole.status == 1,  # 启用状态
+                        SysRole.is_deleted == 0  # 未删除
+                    )
+                    .order_by(SysRole.sort, SysRole.create_time.desc())  # 按排序和创建时间排序
+                )
+
+                result = await session.execute(stmt)
+                roles = result.scalars().all()
+
+                print(f"✅ 从数据库获取角色选项: 共 {len(roles)} 个角色")
+                for role in roles:
+                    print(f"   - {role.name} ({role.code}): ID={role.id}")
+
+                return roles
+
+        except Exception as e:
+            print(f"❌ 查询角色选项失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise

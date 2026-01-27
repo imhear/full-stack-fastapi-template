@@ -8,7 +8,7 @@ backend/app/services/user_service.py
 2. 保持数据库模型纯洁（只存储数据）
 3. 统一出口：所有返回前端的数据都经过标准化转换
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -66,21 +66,6 @@ class UserService:
             raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
         return user
 
-    # async def get_user_info(self, user_id: str) -> Dict[str, Any]:
-    #     """
-    #     获取用户信息（前端格式）
-    #
-    #     这是标准接口：返回前端友好的数据结构
-    #
-    #     Args:
-    #         user_id: 用户ID
-    #
-    #     Returns:
-    #         前端格式的用户信息字典
-    #     """
-    #     user = await self.get_user_by_id(user_id)
-    #     return await self._convert_user_to_frontend(user)
-
     async def get_current_user_info(self, current_user: SysUser) -> Dict[str, Any]:
         """
         获取当前登录用户信息（支持 UserMeResponse 格式）
@@ -94,47 +79,6 @@ class UserService:
             user = current_user
 
         return user_mapper.to_user_me_response(user)
-        # ==================== 需要清理的垃圾代码 ====================
-        # if not hasattr(current_user, 'roles') or current_user.roles is None:
-        #     # 重新加载完整用户数据
-        #     user = await self.user_repository.get_by_id(current_user.id)
-        # else:
-        #     user = current_user
-
-        # # 直接构建符合 UserMeResponse 格式的字典
-        # user_data = {
-        #     "userId": str(user.id),
-        #     "username": user.username,
-        #     "nickname": user.nickname,
-        #     "avatar": user.avatar,
-        #     "gender": user.gender,
-        #     "mobile": user.mobile,
-        #     "email": user.email,
-        #     "status": user.status,
-        #     "deptId": str(user.dept_id) if user.dept_id else None,
-        #     "createTime": user.create_time,
-        #     "roles": [],
-        #     "perms": []
-        # }
-        #
-        # # 提取角色和权限
-        # if user.roles:
-        #     role_codes = []
-        #     permission_codes = set()
-        #
-        #     for role in user.roles:
-        #         if hasattr(role, 'code'):
-        #             role_codes.append(role.code)
-        #
-        #         if hasattr(role, 'permissions'):
-        #             for perm in role.permissions:
-        #                 if hasattr(perm, 'code'):
-        #                     permission_codes.add(perm.code)
-        #
-        #     user_data["roles"] = role_codes
-        #     user_data["perms"] = list(permission_codes)
-        #
-        # return user_data
 
     async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
         """
@@ -180,7 +124,6 @@ class UserService:
         #
         # return profile_data
 
-    from typing import List, Dict, Optional, Any, Tuple
 
     async def list_users_frontend(
             self,
@@ -230,7 +173,6 @@ class UserService:
         # 转换为前端格式
         return user_mapper.to_users_list(users), total
 
-
     async def list_users(self, offset: int = 0, limit: int = 100) -> UserList:
         """
         获取用户列表（原始格式）
@@ -250,7 +192,7 @@ class UserService:
 
     # ==================== 用户管理方法 ====================
 
-    async def create_user(self, user_in: UserCreate) -> Dict[str, Any]:
+    async def create(self, user_in: UserCreate) -> Any:
         """
         创建用户（返回前端格式）
 
@@ -260,38 +202,60 @@ class UserService:
         Returns:
             前端格式的新用户信息
         """
-        # 1. 验证邮箱唯一性
-        existing_user = await self.user_repository.get_by_username(username=user_in.username)
-        if existing_user:
-            raise BadRequest(detail=f"邮箱 '{user_in.email}' 已被注册")
+        try:
+            # 1. 验证用户名唯一性
+            existing_user = await self.user_repository.get_by_username(username=user_in.username)
+            if existing_user:
+                raise BadRequest(detail=f"用户名 '{user_in.username}' 已存在")
 
-        # 2. 密码验证
-        if len(user_in.password) < 6:
-            raise BadRequest(detail="密码长度至少6位")
+            # 2. 验证邮箱唯一性（如果提供了邮箱）
+            if user_in.email:
+                existing_email = await self.user_repository.get_by_email(email=user_in.email)
+                if existing_email:
+                    raise BadRequest(detail=f"邮箱 '{user_in.email}' 已被注册")
 
-        # 3. 状态映射
-        is_active = True
-        if hasattr(user_in, 'status') and user_in.status is not None:
-            is_active = user_in.status == 1
+            # 3. 处理密码：如果为空，生成随机密码
+            password = user_in.password
+            if not password:
+                import random
+                import string
+                # 生成8位随机密码：包含大小写字母和数字
+                password = ''.join(random.choices(
+                    string.ascii_letters + string.digits,
+                    k=8
+                ))
 
-        # 4. 创建用户数据
-        user_in_with_hash = UserCreateWithHash(
-            **user_in.model_dump(exclude={"password"}),
-            hashed_password=get_password_hash(user_in.password),
-            is_active=is_active
-        )
+            # 4. 密码验证
+            if len(password) < 6:
+                raise BadRequest(detail="密码长度至少6位")
 
-        # 5. 调用仓库层创建
-        async with self.user_repository.transaction() as session:
-            user = await self.user_repository.create(
-                user_in=user_in_with_hash,
-                session=session
+            # 5.提取所有字段，排除明文密码
+            user_data = user_in.model_dump(exclude={"password"})
+
+            # 6.创建加密密码
+            hashed_password = get_password_hash(password)
+
+            # 7.创建中间模型
+            user_in_with_hash = UserCreateWithHash(
+                **user_data,
+                hashed_password=hashed_password
             )
 
-        # 6. 转换为前端格式返回
-        return user_mapper.to_user_detail(user)
-        # ==================== 需要清理的垃圾代码 ====================
-        # return await self._convert_user_to_frontend(user)
+            # 8. 调用仓库层创建
+            async with self.user_repository.transaction() as session:
+                user = await self.user_repository.create(
+                    user_in=user_in_with_hash,
+                    session=session
+                )
+                return {}
+        except BadRequest as e:
+            # print(f"❌ 业务验证失败: {str(e)}")
+            raise
+        except Exception as e:
+            # print(f"❌ 创建用户异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"创建用户失败: {str(e)}")
 
     async def update_user(self, user_id: str, user_update: UserUpdate) -> Dict[str, Any]:
         """

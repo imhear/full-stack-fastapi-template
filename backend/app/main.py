@@ -245,6 +245,7 @@ def create_app() -> FastAPI:
         "app.api.v1.endpoints.roles",  # 角色API
         "app.api.v1.endpoints.menus",  # 新增菜单API
         "app.api.v1.endpoints.depts",  # 新增部门API
+        "app.api.v1.endpoints.dicts",  # 新增部门API
         "app.api.deps"  # 认证依赖模块（需注入AuthService）
     ])
 

@@ -5,9 +5,10 @@ backend/app/api/v1/endpoints/roles.py
 """
 from fastapi import APIRouter, Depends, HTTPException
 from dependency_injector.wiring import inject, Provide
-from typing import Annotated, List
+from typing import Annotated, List, Any
 
 from app.di.container import Container
+from app.schemas.responses import ApiResponse
 from app.services.sys_role_service import RoleService
 from app.schemas.sys_role import RoleCreate, RoleUpdate, RoleOut  # 明确导入所需Schema
 from app.schemas.sys_relationship import RolePermissionAssignment
@@ -18,6 +19,66 @@ from app.utils.permission_checker import permission_checker
 from app.api.deps import CurrentSuperuser, RoleServiceDep  # 仅超级用户可操作
 
 router = APIRouter(prefix="/roles", tags=["roles"])
+
+
+@router.get(
+    "/options",
+    response_model=ApiResponse,
+    summary="角色下拉选项",
+    description="获取角色树形下拉选项，仅返回启用状态的部门"
+)
+@inject
+async def get_role_options(
+        role_service: RoleServiceDep
+        # _current_user: CurrentUser = None
+) -> Any:
+    """
+    获取部门下拉选项
+
+    返回格式：
+    {
+        "code": "00000",
+        "data": [
+            {
+                "value": "部门ID字符串",
+                "label": "部门名称",
+                "tag": "部门编码",
+                "children": [...]
+            }
+        ],
+        "msg": "获取部门选项成功"
+    }
+    """
+    try:
+        print("🔵 ===== 角色下拉选项接口被调用 =====")
+
+        # 调试1：检查传入的dept_service类型
+        print(f"🔍 调试1: role_service 类型: {type(role_service)}")
+        print(f"🔍 调试1: role_service 内容: {role_service}")
+
+        # 调试2：检查是否有get_dept_options方法
+        if hasattr(role_service, 'get_dept_options'):
+            print("✅ 调试2: role_service 有 get_dept_options 方法")
+        else:
+            print("❌ 调试2: role_service 没有 get_dept_options 方法")
+            print(
+                f"🔍 调试2: role_service 的所有方法: {[method for method in dir(role_service) if not method.startswith('_')]}")
+
+        # TODO 获取角色选项，待实现数据层
+        options = await role_service.get_role_options()
+
+        print(f"✅ 获取角色选项成功: 返回{len(options)}个角色")
+
+        return ApiResponse.success(
+            data=options,
+            msg="获取角色选项成功"
+        )
+
+    except Exception as e:
+        print(f"❌ 获取角色选项失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"获取角色选项失败: {str(e)}")
 
 
 # 1. 异步查询角色列表（完善CRUD）

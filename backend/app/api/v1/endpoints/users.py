@@ -167,9 +167,9 @@ async def get_user_info(
 @inject
 async def create_user(
         user_in: UserCreate,
-        _superuser: CurrentSuperuser,
-        user_service: UserServiceDep,
-        _=Depends(permission_checker(PermissionCode.USER_CREATE.value))
+        # _superuser: CurrentSuperuser,
+        user_service: UserServiceDep
+        # _=Depends(permission_checker(PermissionCode.USER_CREATE.value)) # TODO 临时注销
 ) -> Any:
     """
     创建用户
@@ -178,7 +178,7 @@ async def create_user(
     响应体：前端格式的创建后用户数据
     """
     try:
-        user_info = await user_service.create_user(user_in)
+        user_info = await user_service.create(user_in)
         return ApiResponse.success(data=user_info, msg="用户创建成功")
     except BadRequest as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -512,18 +512,30 @@ async def read_users(
         if len(users) > 0:
             print(f"📈 性能提升预估: 并行执行 {parallel_time:.3f}s vs 串行预估 {total_time:.3f}s")
 
-        return JSONResponse({
-            "code": "00000",
-            "data": {
-                "data": users,
-                "page": {
-                    "total": total,
-                    "pageNum": pageNum,
-                    "pageSize": pageSize
-                }
-            },
-            "msg": "操作成功"
-        })
+        # return JSONResponse({
+        #     "code": "00000",
+        #     "data": {
+        #         "data": users,
+        #         "page": {
+        #             "total": total,
+        #             "pageNum": pageNum,
+        #             "pageSize": pageSize
+        #         }
+        #     },
+        #     "msg": "操作成功"
+        # })
+        options = {
+            "data": users,
+            "page": {
+                "total": total,
+                "pageNum": pageNum,
+                "pageSize": pageSize
+            }
+        }
+        return ApiResponse.success(
+            data=options,
+            msg="获取字典项选项成功"
+        )
 
     except Exception as e:
         print(f"❌ 获取用户列表失败: {str(e)}")

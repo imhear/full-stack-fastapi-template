@@ -16,6 +16,7 @@ from app.repositories.sys_permission_repository import PermissionRepository
 from app.repositories.sys_role_repository import RoleRepository
 from app.services.captcha_service import CaptchaService # 新增：导入CaptchaService
 from app.repositories.sys_dept_repository import DeptRepository # 部门相关依赖
+from app.repositories.sys_dict_repository import DictRepository
 
 from app.services.sys_user_service import UserService
 from app.services.sys_permission_service import PermissionService
@@ -23,6 +24,7 @@ from app.services.sys_auth_service import AuthService
 from app.services.sys_role_service import RoleService
 from app.services.redis_service import RedisService  # 新增：导入RedisService
 from app.services.sys_dept_service import DeptService
+from app.services.sys_dict_service import DictService
 
 from app.core.config import settings
 
@@ -163,6 +165,11 @@ class Container(containers.DeclarativeContainer):
         DeptRepository,
         async_session_factory=async_session_factory
     )
+    # 字典仓库
+    dict_repository = providers.Factory(
+        DictRepository,
+        async_session_factory=async_session_factory
+    )
 
     # 5. Service层：注入Repo和请求级会话（新增2个Service，对齐现有风格）
     user_service = providers.Factory(
@@ -196,8 +203,13 @@ class Container(containers.DeclarativeContainer):
         dept_repository=dept_repository,
         async_db_session=async_db
     )
-
-
+    # 字典服务
+    dict_service = providers.Factory(
+        DictService,
+        dict_repository=dict_repository,
+        async_db_session=async_db,
+        redis_service=redis_service
+    )
 
     # 6. 模块扫描：新增API端点模块（确保DI能扫描到新增接口）
     wiring_config = containers.WiringConfiguration(
@@ -207,6 +219,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.endpoints.roles",
             "app.api.v1.endpoints.menus",
             "app.api.v1.endpoints.depts",
+            "app.api.v1.endpoints.dicts",
             "app.api.deps"
         ]
     )
@@ -219,6 +232,8 @@ class Container(containers.DeclarativeContainer):
         print("🔍 DEBUG: 容器依赖关系")
         print(f"🔍 DEBUG: dept_repository: {container.dept_repository}")
         print(f"🔍 DEBUG: dept_service: {container.dept_service}")
+        print(f"🔍 DEBUG: dict_repository: {container.dict_repository}")
+        print(f"🔍 DEBUG: dict_service: {container.dict_service}")
 
         # 尝试获取实例
         try:

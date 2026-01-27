@@ -36,6 +36,12 @@ class PermissionCode(Enum):
     DEPT_UPDATE = ("dept:update", "更新用户", "允许修改现有用户信息")
     DEPT_DELETE = ("dept:delete", "删除用户", "允许从系统中删除用户")
 
+    # 数据字典权限
+    SYSTEM_DICT_READ = ("system:dict:read", "查看数据字典", "允许查看数据字典")
+    SYSTEM_DICT_CREATE = ("system:dict:create", "创建数据字典", "允许创建数据字典")
+    SYSTEM_DICT_UPDATE = ("system:dict:update", "更新数据字典", "允许更新数据字典")
+    SYSTEM_DICT_DELETE = ("system:dict:delete", "删除数据字典", "允许从删除数据字典")
+
     # 角色管理权限
     ROLE_ASSIGN = ("role:assign", "角色分配", "为用户分配角色")
     ROLE_MANAGE = ("role:manage", "角色管理", "管理角色配置")

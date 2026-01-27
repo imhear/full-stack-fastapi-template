@@ -26,16 +26,99 @@ class UserBase(BaseSchema):
     email: EmailStr = Field(..., description="邮箱地址", example="john@example.com")
     full_name: Optional[str] = Field(None, description="全名")
 
-class UserCreate(UserBase):
-    password: str = Field(..., description="密码", min_length=6, example="securepassword123")
-    role_ids: Optional[List[str]] = Field([], description="角色ID列表")
+# class UserCreate(UserBase):
+#     password: str = Field(..., description="密码", min_length=6, example="securepassword123")
+#     role_ids: Optional[List[str]] = Field([], description="角色ID列表")
 
-# 新增：中间模型（仅用于Service→Repo层，携带加密后的密码）
-class UserCreateWithHash(UserBase):
-    hashed_password: str = Field(..., description="加密后的密码")  # 新增加密密码字段
-    role_ids: Optional[List[str]] = Field([], description="角色ID列表")  # 保留角色ID
-    # 【核心修复】添加is_active字段，默认值True（与业务逻辑一致）
-    is_active: bool = Field(True, description="是否激活，默认True")
+
+from pydantic import field_validator, ConfigDict
+
+
+class UserCreate(BaseSchema):
+    """
+    创建用户请求模型 - 支持前端格式
+    """
+    # 用户基本信息
+    username: str = Field(..., description="用户名", min_length=3, max_length=50, example="zhangsan")
+    nickname: str = Field(..., description="用户昵称", min_length=2, max_length=50, example="张三")
+
+    # 密码字段改为可选（如果为空，后端生成默认密码）
+    password: Optional[str] = Field(
+        None,
+        description="密码（为空时系统生成默认密码）",
+        min_length=6,
+        max_length=20,
+        example="123456"
+    )
+
+    # 个人信息
+    gender: Optional[int] = Field(1, description="性别(1-男 2-女 0-保密)", ge=0, le=2, example=1)
+    mobile: Optional[str] = Field(None, description="手机号", pattern=r"^1[3-9]\d{9}$", example="13888888888")
+    email: Optional[str] = Field(None, description="邮箱", example="user@example.com")
+
+    # 组织信息
+    dept_id: Optional[str] = Field(None, description="部门ID", alias="deptId",
+                                   example="22222222-2222-2222-2222-222222222222")
+    status: int = Field(1, description="状态(1-正常 0-禁用)", ge=0, le=1, example=1)
+
+    # 角色信息
+    role_ids: Optional[List[str]] = Field([], description="角色ID列表", alias="roleIds")
+
+    # 配置
+    model_config = ConfigDict(
+        populate_by_name=True,  # 支持别名
+        json_schema_extra={
+            "example": {
+                "username": "zhangsan",
+                "nickname": "张三",
+                "password": "123456",
+                "gender": 1,
+                "mobile": "13888888888",
+                "email": "zhangsan@example.com",
+                "deptId": "22222222-2222-2222-2222-222222222222",
+                "status": 1,
+                "roleIds": ["55555555-5555-5555-5555-555555555555"]
+            }
+        }
+    )
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: Optional[str]) -> Optional[str]:
+        """密码验证：如果提供，必须至少6位"""
+        if v is not None and len(v) < 6:
+            raise ValueError('密码长度至少6位')
+        return v
+
+
+class UserCreateWithHash(BaseSchema):
+    """
+    创建用户中间模型（用于Service→Repo层）
+    包含加密后的密码和所有必要字段
+    """
+    # 用户基本信息
+    username: str
+    nickname: str
+    gender: Optional[int] = 1
+    password: Optional[str] = None  # 原始密码（仅用于日志，不存储）
+    hashed_password: str  # 加密后的密码
+
+    # 组织信息
+    dept_id: Optional[str] = None
+    mobile: Optional[str] = None
+    status: int = 1
+    email: Optional[str] = None
+    is_active: bool = True
+
+    # 角色信息
+    role_ids: Optional[List[str]] = []
+
+# # 新增：中间模型（仅用于Service→Repo层，携带加密后的密码）
+# class UserCreateWithHash(UserBase):
+#     hashed_password: str = Field(..., description="加密后的密码")  # 新增加密密码字段
+#     role_ids: Optional[List[str]] = Field([], description="角色ID列表")  # 保留角色ID
+#     # 【核心修复】添加is_active字段，默认值True（与业务逻辑一致）
+#     is_active: bool = Field(True, description="是否激活，默认True")
 
 class UserUpdate(BaseSchema):
     username: Optional[str] = None

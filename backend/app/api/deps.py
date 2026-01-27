@@ -20,6 +20,7 @@ from fastapi import HTTPException, status
 from app.services.sys_dept_service import DeptService
 from app.services.sys_role_service import RoleService
 from app.services.sys_user_service import UserService
+from app.services.sys_dict_service import DictService
 
 import redis.asyncio as redis
 print(f"🔍 DEBUG: 导入依赖注入模块")
@@ -73,11 +74,12 @@ async def get_current_active_superuser(
     current_user: SysUser = Depends(get_current_user)
 ) -> SysUser:
     """仅允许超级用户访问"""
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough privileges (requires superuser)"
-        )
+    # TODO 临时注释
+    # if not current_user.is_superuser:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Not enough privileges (requires superuser)"
+    #     )
     return current_user
 
 
@@ -94,6 +96,7 @@ AuthServiceDep = Annotated[AuthService, Depends(Provide[Container.auth_service])
 UserServiceDep = Annotated[UserService, Depends(Provide[Container.user_service])]
 RoleServiceDep = Annotated[RoleService, Depends(Provide[Container.role_service])]
 DeptServiceDep = Annotated[DeptService, Depends(Provide[Container.dept_service])]
+DictServiceDep = Annotated[DictService, Depends(Provide[Container.dict_service])]
 
 print(f"🔍 DEBUG: 导入 DeptServiceDep")
 OAuth2FormDep = Annotated[OAuth2PasswordRequestForm, Depends()]
