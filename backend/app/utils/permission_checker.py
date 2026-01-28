@@ -86,10 +86,14 @@ def generate_permission_wildcards(required_perm: str) -> List[str]:
 
 def desensitize_user_id(user_id: str) -> str:
     """
-    用户ID脱敏（行业最佳实践：保护敏感信息）
-    :param user_id: 原始用户ID
-    :return: 脱敏后ID（前6位+后4位，中间MD5）
+    用户ID脱敏（支持 UUID 和字符串类型）
+    :param user_id: 原始用户ID（支持 str 或 UUID）
+    :return: 脱敏后ID
     """
+    # 如果是 UUID 对象，转换为字符串
+    if not isinstance(user_id, str):
+        user_id = str(user_id)
+
     if len(user_id) <= 10:
         return hashlib.md5(user_id.encode()).hexdigest()[:8]
     return f"{user_id[:6]}...{user_id[-4:]}"

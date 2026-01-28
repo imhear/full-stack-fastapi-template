@@ -97,7 +97,7 @@ class UserService:
         if not user:
             raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
 
-        return user_mapper.to_user_profile(user)
+        return user_mapper.to_user_detail(user)
         # ==================== 需要清理的垃圾代码 ====================
         # user = await self.get_user_by_id(user_id)
 
@@ -124,6 +124,32 @@ class UserService:
         #
         # return profile_data
 
+    async def get_user_form_data(self, user_id: str) -> Dict[str, Any]:
+        """
+        获取用户表单数据（用于前端编辑）
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            前端编辑表单需要的数据结构
+
+        Raises:
+            ResourceNotFound: 用户不存在
+        """
+        try:
+            user = await self.user_repository.get_by_id(user_id)
+
+            return user_mapper.to_user_form(user)
+
+        except ResourceNotFound:
+            raise
+        except Exception as e:
+            # 记录错误日志
+            import traceback
+            print(f"获取用户表单数据失败: {str(e)}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"获取用户表单数据失败: {str(e)}")
 
     async def list_users_frontend(
             self,
@@ -134,13 +160,15 @@ class UserService:
         """
         获取用户列表（前端格式）- 重构版
 
-        支持多种过滤条件：
+        支持多种过滤条件，支持排序参数：
         - status: 状态过滤
         - username__like: 用户名模糊搜索
         - nickname__like: 昵称模糊搜索
         - keywords: 多字段关键词搜索
         - create_time_range: 创建时间范围
         - status__in: 状态IN查询
+        - sort_field: 排序字段
+        - sort_direction: 排序方向（ASC/DESC）
 
         示例：
         list_users_frontend(
@@ -257,6 +285,7 @@ class UserService:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"创建用户失败: {str(e)}")
 
+
     async def update_user(self, user_id: str, user_update: UserUpdate) -> Dict[str, Any]:
         """
         更新用户信息（返回前端格式）
@@ -273,23 +302,22 @@ class UserService:
 
         # TODO 待实现邮箱字段
         # 2. 邮箱唯一性验证（如果修改邮箱）
-        # if user_update.email and user_update.email != user.email:
-        #     existing_user = await self.user_repository.get_by_email(email=user_update.email)
-        #     if existing_user:
-        #         raise BadRequest(detail=f"邮箱 '{user_update.email}' 已被使用")
+        if user_update.email and user_update.email != user.email:
+            existing_user = await self.user_repository.get_by_email(email=user_update.email)
+            if existing_user:
+                raise BadRequest(detail=f"邮箱 '{user_update.email}' 已被使用")
 
         async with self.user_repository.transaction() as session:
             # 3. 提取更新数据
             update_data = user_update.model_dump(exclude_unset=True)
 
-            # 4. 处理状态映射
-            if "status" in update_data:
-                user.is_active = update_data["status"] == 1
-
             # 5. 更新基础字段
             for key, value in update_data.items():
-                if key not in ["role_ids", "status"]:
+                if key not in ["role_ids"]:
                     setattr(user, key, value)
+
+            # 7. 保存更新
+            await self.user_repository.update(user=user, session=session)
 
             # 6. 更新角色（如果有）
             if "role_ids" in update_data:
@@ -303,16 +331,76 @@ class UserService:
             await self.user_repository.update(user=user, session=session)
 
             # 8. 重新加载完整数据
-            updated_user = self.get_user_by_id(user_id)
+            updated_user = await self.get_user_by_id(user_id)
 
             # 9. 转换为前端格式返回
-        return user_mapper.to_user_detail(updated_user)
-            # ==================== 需要清理的垃圾代码 ====================
-            # 7. 保存更新
-            # updated_user = await self.user_repository.update(user=user, session=session)
+            return user_mapper.to_user_detail(updated_user)
 
-        # 8. 转换为前端格式返回
-        # return await self._convert_user_to_frontend(updated_user)
+
+    # async def update_user(self, user_id: str, user_update: UserUpdate) -> Dict[str, Any]:
+    #     """
+    #     更新用户信息（返回前端格式）
+    #
+    #     Args:
+    #         user_id: 用户ID
+    #         user_update: 更新数据
+    #
+    #     Returns:
+    #         前端格式的更新后用户信息
+    #     """
+    #     # 1. 获取用户
+    #     user = await self.get_user_by_id(user_id)
+    #
+    #     # TODO 待实现邮箱字段
+    #     # 2. 邮箱唯一性验证（如果修改邮箱）
+    #     if user_update.email and user_update.email != user.email:
+    #         existing_user = await self.user_repository.get_by_email(email=user_update.email)
+    #         if existing_user:
+    #             raise BadRequest(detail=f"邮箱 '{user_update.email}' 已被使用")
+    #
+    #     async with self.user_repository.transaction() as session:
+    #         # 3. 提取更新数据
+    #         update_data = user_update.model_dump(exclude_unset=True)
+    #
+    #         # 4. 处理状态映射，过期属性
+    #         # if "status" in update_data:
+    #         #     user.is_active = update_data["status"] == 1
+    #         #
+    #         # # 5. 更新基础字段，过期属性
+    #         # for key, value in update_data.items():
+    #         #     if key not in ["role_ids", "status"]:
+    #         #         setattr(user, key, value)
+    #
+    #         # 5. 更新基础字段
+    #         for key, value in update_data.items():
+    #             if key not in ["role_ids"]:
+    #                 setattr(user, key, value)
+    #
+    #         # 7. 保存更新
+    #         await self.user_repository.update(user=user, session=session)
+    #
+    #         # 6. 更新角色（如果有）
+    #         if "role_ids" in update_data:
+    #             await self.user_repository.assign_roles(
+    #                 user_id=user_id,
+    #                 role_ids=update_data["role_ids"],
+    #                 session=session
+    #             )
+    #
+    #         # 7. 保存更新
+    #         await self.user_repository.update(user=user, session=session)
+    #
+    #         # 8. 重新加载完整数据
+    #         updated_user = await self.get_user_by_id(user_id)
+    #
+    #         # 9. 转换为前端格式返回
+    #         return user_mapper.to_user_detail(updated_user)
+    #         # ==================== 需要清理的垃圾代码 ====================
+    #         # 7. 保存更新
+    #         # updated_user = await self.user_repository.update(user=user, session=session)
+    #
+    #     # 8. 转换为前端格式返回
+    #     # return await self._convert_user_to_frontend(updated_user)
 
     async def update_last_login(self, user_id: str) -> None:
         """

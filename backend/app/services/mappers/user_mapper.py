@@ -1,46 +1,84 @@
 """
 backend/app/services/mappers/user_mapper.py
-上次更新：2026/1/21
-用户字段映射器 - 重构版（完全职责分离）
+用户字段映射器 - 重构版（策略模式实现）
 
 设计原则：
-1. 单一职责：只处理用户数据结构转换
-2. 完备性：覆盖所有用户相关的转换场景
-3. 无副作用：不处理业务逻辑，只做数据清洗
+1. 单一职责：每个类/模块只做一件事
+2. 开放封闭：新增格式不需修改现有代码
+3. 依赖倒置：依赖抽象，不依赖具体实现
+4. 组合优于继承：使用策略模式组合行为
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime
-import uuid
 from app.models import SysUser
-from app.utils.field_mapper import FieldMapper
+from .constants import FormatType, DEBUG_CONFIG
+from .base import FormatStrategy
+from .strategies import (
+    UserMeResponseStrategy,
+    UserProfileStrategy,
+    UserListItemStrategy,
+    UserDetailStrategy,
+    UserFormStrategy
+)
+from .extractors import UserBaseDataExtractor
 
 
 class UserFieldMapper:
     """
-    用户字段映射器 - 增强版（支持所有转换场景）
+    用户字段映射器 - 策略模式实现
 
-    职责：所有用户数据结构的转换都在这里完成
+    职责：协调各个策略完成用户数据转换
     """
 
-    def __init__(self):
-        # 基础字段映射配置
-        self._field_mapper = FieldMapper({
-            # 用户标识
-            'id': 'userId',
+    def __init__(self, debug: bool = None):
+        """
+        初始化用户字段映射器
 
-            # 时间字段
-            'create_time': 'createTime',
-            'update_time': 'updateTime',
-            'last_login': 'lastLogin',
+        Args:
+            debug: 是否启用调试模式，默认使用配置
+        """
+        self.debug = debug if debug is not None else DEBUG_CONFIG['enabled']
 
-            # 组织字段
-            'dept_id': 'deptId',
-            'dept_name': 'deptName',
+        # 初始化数据提取器
+        self.base_extractor = UserBaseDataExtractor()
 
-            # 个人信息
-            'status': 'status',
-            'role_ids': 'roleIds',
-        })
+        # 注册所有格式策略
+        self._strategies: Dict[str, FormatStrategy] = {}
+        self._register_strategies()
+
+        # 缓存策略实例
+        self._strategy_cache = {}
+
+    def _register_strategies(self):
+        """注册所有格式策略"""
+        strategies = [
+            UserMeResponseStrategy(debug=self.debug),
+            UserProfileStrategy(debug=self.debug),
+            UserListItemStrategy(debug=self.debug),
+            UserDetailStrategy(debug=self.debug),
+            UserFormStrategy(debug=self.debug),
+        ]
+
+        for strategy in strategies:
+            self._strategies[strategy.format_name()] = strategy
+
+    def _get_strategy(self, format_type: str) -> Optional[FormatStrategy]:
+        """
+        获取指定格式的策略
+
+        Args:
+            format_type: 格式类型
+
+        Returns:
+            格式策略实例，如果找不到返回None
+        """
+        # 使用缓存提高性能
+        if format_type not in self._strategy_cache:
+            strategy = self._strategies.get(format_type)
+            if not strategy:
+                raise ValueError(f"未知的格式类型: {format_type}")
+            self._strategy_cache[format_type] = strategy
+
+        return self._strategy_cache[format_type]
 
     # ==================== 主要转换方法 ====================
 
@@ -54,7 +92,7 @@ class UserFieldMapper:
         Returns:
             UserMeResponse格式的字典
         """
-        return self._convert_to_format(user, 'me_response')
+        return self._convert_to_format(user, FormatType.ME_RESPONSE)
 
     def to_user_profile(self, user: SysUser) -> Dict[str, Any]:
         """
@@ -66,7 +104,7 @@ class UserFieldMapper:
         Returns:
             个人中心信息格式的字典
         """
-        return self._convert_to_format(user, 'profile')
+        return self._convert_to_format(user, FormatType.PROFILE)
 
     def to_user_list_item(self, user: SysUser) -> Dict[str, Any]:
         """
@@ -78,7 +116,7 @@ class UserFieldMapper:
         Returns:
             列表项格式的字典
         """
-        return self._convert_to_format(user, 'list_item')
+        return self._convert_to_format(user, FormatType.LIST_ITEM)
 
     def to_user_detail(self, user: SysUser) -> Dict[str, Any]:
         """
@@ -90,7 +128,19 @@ class UserFieldMapper:
         Returns:
             详情格式的字典
         """
-        return self._convert_to_format(user, 'detail')
+        return self._convert_to_format(user, FormatType.DETAIL)
+
+    def to_user_form(self, user: SysUser) -> Dict[str, Any]:
+        """
+        转换为用户表单格式（用于前端编辑）
+
+        Args:
+            user: SysUser ORM对象
+
+        Returns:
+            用户表单格式的字典，包含roleIds字段
+        """
+        return self._convert_to_format(user, FormatType.FORM)
 
     def to_users_list(self, users: List[SysUser]) -> List[Dict[str, Any]]:
         """
@@ -104,158 +154,53 @@ class UserFieldMapper:
         """
         return [self.to_user_list_item(user) for user in users]
 
-    # ==================== 格式配置 ====================
+    # ==================== 核心转换逻辑 ====================
 
     def _convert_to_format(self, user: SysUser, format_type: str) -> Dict[str, Any]:
         """
-        根据格式类型转换用户对象
+        根据格式类型转换用户对象（策略模式实现）
 
-        这是内部方法，对外暴露具体格式的方法
+        Args:
+            user: SysUser ORM对象
+            format_type: 格式类型
+
+        Returns:
+            转换后的数据字典
+
+        Raises:
+            ValueError: 格式类型不支持
         """
-        # 基础数据提取
-        base_data = self._extract_base_data(user)
+        # 1. 提取基础数据
+        base_data = self.base_extractor.extract(user)
 
-        # 根据格式类型添加特定字段
-        if format_type == 'me_response':
-            return self._build_me_response(base_data, user)
-        elif format_type == 'profile':
-            return self._build_profile(base_data, user)
-        elif format_type == 'list_item':
-            return self._build_list_item(base_data, user)
-        elif format_type == 'detail':
-            return self._build_detail(base_data, user)
-        else:
-            raise ValueError(f"未知的格式类型: {format_type}")
+        # 2. 获取对应策略
+        strategy = self._get_strategy(format_type)
 
-    def _extract_base_data(self, user: SysUser) -> Dict[str, Any]:
+        # 3. 使用策略转换数据
+        return strategy.transform(base_data, user)
+
+    # ==================== 扩展方法 ====================
+
+    def register_strategy(self, strategy: FormatStrategy):
         """
-        提取基础用户数据（所有格式共用）
+        注册新的格式策略
+
+        Args:
+            strategy: 格式策略实例
         """
-        # 从ORM对象提取数据（确保类型安全）
-        data = {
-            'id': str(user.id) if user.id else None,
-            'username': user.username,
-            'nickname': user.nickname or user.username,  # 默认值处理
-            'avatar': user.avatar,
-            'gender': user.gender,
-            'mobile': user.mobile,
-            'email': user.email,
-            'status': user.status,
-            'dept_id': str(user.dept_id) if user.dept_id else None,
-            'create_time': user.create_time,
-        }
+        format_name = strategy.format_name()
+        self._strategies[format_name] = strategy
+        # 清除缓存
+        self._strategy_cache.pop(format_name, None)
 
-        # 清理None值
-        return {k: v for k, v in data.items() if v is not None}
+    def get_available_formats(self) -> List[str]:
+        """
+        获取所有支持的格式类型
 
-    def _build_me_response(self, base_data: Dict[str, Any], user: SysUser) -> Dict[str, Any]:
-        """构建当前用户响应格式"""
-        print(f"[DEBUG] base_data keys: {list(base_data.keys())}")
-        print(f"[DEBUG] base_data: {base_data}")
-
-        result = self._field_mapper.backend_to_frontend(base_data)
-
-        print(f"[DEBUG] after mapping result keys: {list(result.keys())}")
-        print(f"[DEBUG] after mapping result: {result}")
-
-        # 提取角色和权限
-        result['roles'] = self._extract_role_codes(user)
-        result['perms'] = self._extract_permission_codes(user)
-
-        # 确保所有必需字段存在
-        result.setdefault('avatar', None)
-        result.setdefault('deptId', None)
-
-        print(f"[DEBUG] final result: {result}")
-        return result
-
-    # def _build_me_response(self, base_data: Dict[str, Any], user: SysUser) -> Dict[str, Any]:
-    #     """构建当前用户响应格式"""
-    #     result = self._field_mapper.backend_to_frontend(base_data)
-    #
-    #     # 提取角色和权限
-    #     result['roles'] = self._extract_role_codes(user)
-    #     result['perms'] = self._extract_permission_codes(user)
-    #
-    #     # 确保所有必需字段存在
-    #     result.setdefault('avatar', None)
-    #     result.setdefault('deptId', None)
-    #
-    #     return result
-
-    def _build_profile(self, base_data: Dict[str, Any], user: SysUser) -> Dict[str, Any]:
-        """构建个人中心格式"""
-        result = self._field_mapper.backend_to_frontend(base_data)
-
-        # 添加部门信息
-        if hasattr(user, 'dept') and user.dept:
-            result['deptName'] = user.dept.name
-
-        # 添加角色信息
-        if hasattr(user, 'roles') and user.roles:
-            role_names = [role.name for role in user.roles if hasattr(role, 'name')]
-            result['roleNames'] = ', '.join(role_names)
-
-        # 时间格式处理
-        if 'createTime' in result and isinstance(result['createTime'], datetime):
-            result['createTime'] = result['createTime'].isoformat()
-
-        return result
-
-    def _build_list_item(self, base_data: Dict[str, Any], user: SysUser) -> Dict[str, Any]:
-        """构建列表项格式"""
-        result = self._field_mapper.backend_to_frontend(base_data)
-
-        # 添加部门信息
-        if hasattr(user, 'dept') and user.dept and hasattr(user.dept, 'name'):
-            result['deptName'] = user.dept.name
-
-        # 添加角色名称
-        if hasattr(user, 'roles') and user.roles:
-            role_names = [role.name for role in user.roles if hasattr(role, 'name')]
-            result['roleNames'] = ', '.join(role_names)
-
-        # 时间格式处理
-        if 'createTime' in result and isinstance(result['createTime'], datetime):
-            result['createTime'] = result['createTime'].isoformat()
-
-        return result
-
-    def _build_detail(self, base_data: Dict[str, Any], user: SysUser) -> Dict[str, Any]:
-        """构建用户详情格式"""
-        result = self._field_mapper.backend_to_frontend(base_data)
-
-        # 提取角色和权限
-        result['roles'] = self._extract_role_codes(user)
-        result['perms'] = self._extract_permission_codes(user)
-
-        # 时间格式处理
-        if 'createTime' in result and isinstance(result['createTime'], datetime):
-            result['createTime'] = result['createTime'].isoformat()
-
-        return result
-
-    # ==================== 辅助方法 ====================
-
-    def _extract_role_codes(self, user: SysUser) -> List[str]:
-        """提取角色代码"""
-        role_codes = []
-        if hasattr(user, 'roles') and user.roles:
-            for role in user.roles:
-                if hasattr(role, 'code'):
-                    role_codes.append(role.code)
-        return role_codes
-
-    def _extract_permission_codes(self, user: SysUser) -> List[str]:
-        """提取权限代码"""
-        permission_codes = set()
-        if hasattr(user, 'roles') and user.roles:
-            for role in user.roles:
-                if hasattr(role, 'permissions'):
-                    for perm in role.permissions:
-                        if hasattr(perm, 'code'):
-                            permission_codes.add(perm.code)
-        return list(permission_codes)
+        Returns:
+            支持的格式类型列表
+        """
+        return list(self._strategies.keys())
 
 
 # 全局用户映射器实例

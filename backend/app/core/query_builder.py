@@ -303,7 +303,7 @@ def create_user_query_builder() -> PaginatedQueryBuilder:
         InFilter(SysUser.dept_id)
     )
 
-    # 默认排序
-    builder.order_by(SysUser.create_time.desc())
+    # ✅ 移除默认排序，让调用方动态设置
+    # builder.order_by(SysUser.create_time.desc())
 
     return builder

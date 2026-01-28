@@ -53,7 +53,7 @@ async def read_me(
     {
         "code": "00000",
         "data": {
-            "userId": "用户ID",
+            "id": "用户ID",
             "username": "用户名",
             "nickname": "昵称",
             "avatar": "头像URL",
@@ -80,8 +80,8 @@ async def read_me(
         print(traceback.format_exc())
         # 提供更有用的错误信息
         error_msg = f"获取用户信息失败: {str(e)}"
-        if "userId" in str(e):
-            error_msg += " (缺少 userId 字段)"
+        if "id" in str(e):
+            error_msg += " (缺少 id 字段)"
         raise HTTPException(status_code=500, detail=error_msg)
 
 
@@ -125,7 +125,7 @@ async def get_profile(
 
 
 @router.get(
-    "/{user_id}/info",
+    "/{user_id}/form",
     response_model=ApiResponse[dict],
     summary="获取指定用户信息",
     description="根据用户ID获取用户信息"
@@ -136,22 +136,21 @@ async def get_profile(
     description="查看用户详情"
 )
 @inject
-async def get_user_info(
+async def get_user_form(
         user_id: str = Path(..., description="用户ID"),
-        _superuser: CurrentSuperuser = None,
+        # _superuser: CurrentSuperuser = None,
         user_service: UserServiceDep = None
 ) -> Any:
     """
     获取指定用户信息
     """
     try:
-        user_info = await user_service.get_user_info(user_id)
+        user_info = await user_service.get_user_form_data(user_id)
         return ApiResponse.success(data=user_info, msg="获取用户信息成功")
     except ResourceNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取用户信息失败: {str(e)}")
-
 
 @router.post(
     "/",
@@ -167,9 +166,9 @@ async def get_user_info(
 @inject
 async def create_user(
         user_in: UserCreate,
-        # _superuser: CurrentSuperuser,
-        user_service: UserServiceDep
-        # _=Depends(permission_checker(PermissionCode.USER_CREATE.value)) # TODO 临时注销
+        _superuser: CurrentSuperuser,
+        user_service: UserServiceDep,
+        _=Depends(permission_checker(PermissionCode.USER_CREATE.value)) # TODO 临时注销
 ) -> Any:
     """
     创建用户
@@ -209,6 +208,9 @@ async def update_user(
     更新用户信息
     """
     try:
+        print(f"🎯 API端点: 开始更新用户 {user_id}")
+        print(f"📨 请求数据: {user_update.model_dump(exclude_unset=True)}")
+
         user_info = await user_service.update_user(user_id, user_update)
         return ApiResponse.success(data=user_info, msg="用户信息更新成功")
     except ResourceNotFound as e:
@@ -345,6 +347,9 @@ async def read_users(
         # 分页参数
         pageNum: int = Query(1, description="页码", ge=1),
         pageSize: int = Query(10, description="每页数量", ge=1, le=100),
+        # 排序参数 - 新增
+        field: Optional[str] = Query(None, description="排序字段"),
+        direction: Optional[str] = Query("DESC", description="排序方向（ASC-正序；DESC-反序）"),
         # 过滤参数 - 支持多种查询方式
         status: Optional[int] = Query(None, description="用户状态（精确匹配）"),
         status__in: Optional[str] = Query(None, description="用户状态（多选），格式：1,0"),
@@ -354,13 +359,10 @@ async def read_users(
         keywords: Optional[str] = Query(None, description="综合搜索（用户名/昵称/邮箱/手机号）"),
         gender__eq: Optional[int] = Query(None, description="性别（精确匹配）"),
         gender__range: Optional[str] = Query(None, description="性别范围，格式：1-2"),
-        # create_time_start: Optional[date] = Query(None, description="创建时间起始"),
-        # create_time_end: Optional[date] = Query(None, description="创建时间结束"),
         create_time_start: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
         create_time_end: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
         mobile__like: Optional[str] = Query(None, description="手机号模糊搜索"),
         email__like: Optional[str] = Query(None, description="邮箱模糊搜索"),
-        # 新增部门过滤参数
         deptId: Optional[str] = Query(None, description="部门ID，筛选该部门及其所有子部门的用户")
 ) -> Any:
     """
@@ -372,6 +374,12 @@ async def read_users(
     3. 多字段搜索：keywords="admin"
     4. 范围查询：gender__range="1-2", create_time_start/end
     5. IN查询：status__in="1,0"
+
+    排序参数：
+    - field: 排序字段（如：createTime, username, nickname等）
+    - direction: 排序方向（ASC: 升序, DESC: 降序）
+
+    默认排序：按创建时间降序（createTime DESC）
     """
     try:
         print("🔵 ===== 后端用户列表接口被调用（重构版）=====")
@@ -396,6 +404,28 @@ async def read_users(
                 print(f"⚠️ 获取部门ID列表失败: {str(e)}")
                 # 降级处理：只筛选当前部门
                 filters["dept_id__eq"] = deptId
+
+        # 处理排序参数
+        if field:
+            # 将前端字段名转换为数据库字段名
+            field_mapping = {
+                "createTime": "create_time",
+                "updateTime": "update_time",
+                "username": "username",
+                "nickname": "nickname",
+                "gender": "gender",
+                "status": "status",
+                "mobile": "mobile",
+                "email": "email"
+            }
+
+            db_field = field_mapping.get(field, field)
+            filters["sort_field"] = db_field
+            filters["sort_direction"] = direction.upper() if direction else "DESC"
+        else:
+            # 默认排序：按创建时间降序
+            filters["sort_field"] = "create_time"
+            filters["sort_direction"] = "DESC"
 
         # 精确查询（转换为查询构建器格式）
         if status is not None:
@@ -450,7 +480,6 @@ async def read_users(
             except ValueError:
                 pass
 
-        print(f"📋 查询参数重构后: pageNum={pageNum}, pageSize={pageSize}, filters={filters}")
         # 记录开始时间（用于性能分析）
         import time
         start_time = time.time()
@@ -465,7 +494,6 @@ async def read_users(
 
         dept_future = dept_service.get_dept_options_map()
 
-        print(f"🚀 启动并行任务：用户查询 + 部门映射获取")
 
         # 并行执行（关键优化点）
         user_result, dept_map = await asyncio.gather(
@@ -476,24 +504,18 @@ async def read_users(
 
         # 记录并行执行完成时间
         parallel_time = time.time() - start_time
-        print(f"⏱️ 并行执行完成时间: {parallel_time:.3f}秒")
 
         # ========== 3. 异常检查和结果处理 ==========
         # 检查用户查询异常
         if isinstance(user_result, Exception):
-            print(f"❌ 用户查询失败: {str(user_result)}")
             raise user_result
 
         # 检查部门映射异常
         if isinstance(dept_map, Exception):
-            print(f"⚠️ 部门映射获取失败，用户数据仍返回: {str(dept_map)}")
             dept_map = {}  # 降级处理：使用空映射
 
         # 解包用户结果
         users, total = user_result
-
-        print(f"✅ 查询成功: 返回{len(users)}条数据，总数{total}条")
-        print(f"✅ 部门映射: 获取{len(dept_map)}个部门映射")
 
         # ========== 4. 数据组装阶段（串行） ==========
         # 补充部门名称
@@ -506,24 +528,7 @@ async def read_users(
 
         # 计算总时间
         total_time = time.time() - start_time
-        print(f"📊 总处理时间: {total_time:.3f}秒")
 
-        # 性能对比数据（用于调试）
-        if len(users) > 0:
-            print(f"📈 性能提升预估: 并行执行 {parallel_time:.3f}s vs 串行预估 {total_time:.3f}s")
-
-        # return JSONResponse({
-        #     "code": "00000",
-        #     "data": {
-        #         "data": users,
-        #         "page": {
-        #             "total": total,
-        #             "pageNum": pageNum,
-        #             "pageSize": pageSize
-        #         }
-        #     },
-        #     "msg": "操作成功"
-        # })
         options = {
             "data": users,
             "page": {
@@ -544,27 +549,27 @@ async def read_users(
         raise HTTPException(status_code=500, detail=f"获取用户列表失败: {str(e)}")
 
 
-# 6. 更新用户信息（仅超级用户）
-@router.put(
-    "/{user_id}",
-    response_model=UserOut,
-    summary="更新用户信息",
-    description="需要【user:update】权限，仅超级用户可访问"
-)
-@permission(
-    code=PermissionCode.USER_UPDATE.value,
-    name="用户更新权限",
-    description="需要【user:update】权限"
-)
-@inject
-async def update_user(
-    user_id: str,  # 路径参数
-    user_update: UserUpdate,  # 请求体
-    _superuser: CurrentSuperuser,  # 无默认值
-    user_service: UserServiceDep,  # 无默认值
-    _ = Depends(permission_checker(PermissionCode.USER_UPDATE.value))  # 有默认值
-) -> Any:
-    return await user_service.update_user(user_id, user_update)
+# # 6. 更新用户信息（仅超级用户）
+# @router.put(
+#     "/{user_id}",
+#     response_model=UserOut,
+#     summary="更新用户信息",
+#     description="需要【user:update】权限，仅超级用户可访问"
+# )
+# @permission(
+#     code=PermissionCode.USER_UPDATE.value,
+#     name="用户更新权限",
+#     description="需要【user:update】权限"
+# )
+# @inject
+# async def update_user(
+#     user_id: str,  # 路径参数
+#     user_update: UserUpdate,  # 请求体
+#     _superuser: CurrentSuperuser,  # 无默认值
+#     user_service: UserServiceDep,  # 无默认值
+#     _ = Depends(permission_checker(PermissionCode.USER_UPDATE.value))  # 有默认值
+# ) -> Any:
+#     return await user_service.update_user(user_id, user_update)
 
 # 7. 删除用户（仅超级用户）
 @router.delete(

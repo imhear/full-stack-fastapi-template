@@ -120,12 +120,51 @@ class UserCreateWithHash(BaseSchema):
 #     # 【核心修复】添加is_active字段，默认值True（与业务逻辑一致）
 #     is_active: bool = Field(True, description="是否激活，默认True")
 
+
 class UserUpdate(BaseSchema):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    is_active: Optional[bool] = None
-    role_ids: Optional[List[str]] = None
+    """
+    更新用户请求模型 - 支持前端格式
+    """
+    # 用户基本信息
+    username: Optional[str] = Field(None, description="用户名", min_length=3, max_length=50, example="zhangsan")
+    nickname: Optional[str] = Field(None, description="用户昵称", min_length=2, max_length=50, example="张三")
+
+    # 个人信息
+    gender: Optional[int] = Field(None, description="性别(1-男 2-女 0-保密)", ge=0, le=2, example=1)
+    mobile: Optional[str] = Field(None, description="手机号", pattern=r"^1[3-9]\d{9}$", example="13888888888")
+    email: Optional[str] = Field(None, description="邮箱", example="user@example.com")
+    avatar: Optional[str] = Field(None, description="头像URL", example="https://example.com/avatar.jpg")
+
+    # 组织信息
+    dept_id: Optional[str] = Field(None, description="部门ID", alias="deptId",
+                                   example="22222222-2222-2222-2222-222222222222")
+    status: Optional[int] = Field(None, description="状态(1-正常 0-禁用)", ge=0, le=1, example=1)
+
+    # 角色信息（前端格式：roleIds）
+    role_ids: Optional[List[str]] = Field(None, description="角色ID列表", alias="roleIds")
+
+    model_config = ConfigDict(
+        populate_by_name=True,  # 支持别名
+        json_schema_extra={
+            "example": {
+                "nickname": "新昵称",
+                "gender": 1,
+                "mobile": "13888888888",
+                "email": "new@example.com",
+                "deptId": "22222222-2222-2222-2222-222222222222",
+                "status": 1,
+                "roleIds": ["55555555-5555-5555-5555-555555555555"]
+            }
+        }
+    )
+
+
+# class UserUpdate(BaseSchema):
+#     username: Optional[str] = None
+#     email: Optional[EmailStr] = None
+#     full_name: Optional[str] = None
+#     is_active: Optional[bool] = None
+#     role_ids: Optional[List[str]] = None
 
 class UserInDB(UserBase, TimestampSchema, IDSchema):
     is_active: bool = Field(True, description="是否激活")
@@ -160,7 +199,7 @@ class UserMeResponse(BaseSchema):
     注意：字段名与前端 TypeScript 定义保持一致
     """
     # 必需字段
-    userId: str = Field(..., description="用户ID", examples=["22222222-3333-4444-5555-666666666666"])
+    id: str = Field(..., description="用户ID", examples=["22222222-3333-4444-5555-666666666666"])
     username: str = Field(..., description="用户名", example="admin")
     nickname: str = Field(..., description="用户昵称", example="系统管理员")
     avatar: Optional[str] = Field(None, description="用户头像URL", example="https://example.com/avatar.jpg")
@@ -190,14 +229,14 @@ class UserMeResponse(BaseSchema):
         """确保所有 UUID 字段都转换为字符串"""
         if isinstance(data, dict):
             # 处理 UUID 字段
-            uuid_fields = ['userId', 'deptId']
+            uuid_fields = ['id', 'deptId']
             for field in uuid_fields:
                 if field in data and data[field] and isinstance(data[field], uuid.UUID):
                     data[field] = str(data[field])
 
             # 处理嵌套的 UUID
             if 'id' in data and data['id'] and isinstance(data['id'], uuid.UUID):
-                data['userId'] = str(data['id'])
+                data['id'] = str(data['id'])
 
         return data
 

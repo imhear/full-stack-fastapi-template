@@ -51,6 +51,70 @@ class UserRepository:
         finally:
             await session.close()
 
+    async def get_user_form_data(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取用户表单数据（用于前端编辑）
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            包含用户表单数据的字典，包括：
+            - id: 用户ID
+            - username: 用户名
+            - nickname: 昵称
+            - gender: 性别
+            - mobile: 手机号
+            - avatar: 头像
+            - email: 邮箱
+            - status: 状态
+            - deptId: 部门ID
+            - roleIds: 角色ID列表
+            - openId: 微信openid
+        """
+        async with self.transaction() as session:
+            # 查询用户并预加载角色关系
+            stmt = (
+                select(SysUser)
+                .options(selectinload(SysUser.roles))
+                .where(
+                    SysUser.id == user_id,
+                    SysUser.is_deleted == 0
+                )
+            )
+
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if not user:
+                return None
+
+            # 提取角色ID列表
+            role_ids = []
+            if hasattr(user, 'roles') and user.roles:
+                for role in user.roles:
+                    if hasattr(role, 'id'):
+                        role_ids.append(str(role.id))
+
+            # 构建表单数据
+            form_data = {
+                'id': str(user.id) if user.id else None,
+                'username': user.username,
+                'nickname': user.nickname or user.username,
+                'gender': user.gender,
+                'mobile': user.mobile,
+                'avatar': user.avatar,
+                'email': user.email,
+                'status': user.status,
+                'deptId': str(user.dept_id) if user.dept_id else None,
+                'roleIds': role_ids,
+                'openId': user.openid  # 注意：数据库字段是openid，这里需要转换为openId
+            }
+
+            # 清理None值
+            return {k: v for k, v in form_data.items() if v is not None}
+
+
     # ------------------------------
     # 查询类方法（使用查询构建器重构）
     # ------------------------------
@@ -140,16 +204,21 @@ class UserRepository:
         Args:
             offset: 偏移量
             limit: 每页数量
-            **filters: 过滤条件
+            **filters: 支持多种过滤条件，支持排序参数：
+                - status: 状态过滤
+                - username__like: 用户名模糊搜索
+                - nickname__like: 昵称模糊搜索
+                - keywords: 多字段关键词搜索
+                - create_time_range: 创建时间范围
+                - status__in: 状态IN查询
+                - sort_field: 排序字段
+                - sort_direction: 排序方向（ASC/DESC）
 
         Returns:
             (用户列表, 总数)
         """
         async with self.transaction() as session:
             # 使用窗口函数同时获取数据和总数
-            from sqlalchemy import over
-
-            # 创建基础查询（包含窗口函数）
             stmt = (
                 select(
                     SysUser,
@@ -158,15 +227,40 @@ class UserRepository:
                 .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
             )
 
-            # 使用查询构建器应用过滤条件
+            # 使用查询构建器
             query_builder = create_user_query_builder()
             query_builder.filter(**filters)
 
-            # 构建查询（不包含分页）
-            query = query_builder.build(stmt)
+            # 提取排序参数
+            sort_field = filters.get('sort_field')
+            sort_direction = filters.get('sort_direction', 'DESC')
 
-            # 应用分页
-            query = query.offset(offset).limit(limit)
+            # 应用排序
+            if sort_field:
+                # 获取字段对象
+                field_mapping = {
+                    'create_time': SysUser.create_time,
+                    'update_time': SysUser.update_time,
+                    'username': SysUser.username,
+                    'nickname': SysUser.nickname,
+                    'gender': SysUser.gender,
+                    'status': SysUser.status,
+                    'mobile': SysUser.mobile,
+                    'email': SysUser.email,
+                    'dept_id': SysUser.dept_id
+                }
+
+                field_obj = field_mapping.get(sort_field)
+                if field_obj:
+                    if sort_direction.upper() == 'ASC':
+                        query_builder.order_by(field_obj.asc())
+                    else:
+                        query_builder.order_by(field_obj.desc())
+
+            # 使用 build_paginated 应用过滤、排序和分页
+            query = query_builder.paginate(offset=offset, limit=limit).build_paginated(stmt)
+
+            print(f"📨 query数据: {query}")
 
             # 执行查询
             result = await session.execute(query)
@@ -180,6 +274,60 @@ class UserRepository:
             total = rows[0].total_count if rows[0].total_count else 0
 
             return users, total
+
+
+    # async def list_all_with_count(
+    #         self,
+    #         offset: int = 0,
+    #         limit: int = 100,
+    #         **filters
+    # ) -> Tuple[List[SysUser], int]:
+    #     """
+    #     一次查询返回数据和总数（使用窗口函数）
+    #
+    #     Args:
+    #         offset: 偏移量
+    #         limit: 每页数量
+    #         **filters: 过滤条件
+    #
+    #     Returns:
+    #         (用户列表, 总数)
+    #     """
+    #     async with self.transaction() as session:
+    #         # 使用窗口函数同时获取数据和总数
+    #         from sqlalchemy import over
+    #
+    #         # 创建基础查询（包含窗口函数）
+    #         stmt = (
+    #             select(
+    #                 SysUser,
+    #                 func.count(SysUser.id).over().label('total_count')
+    #             )
+    #             .options(selectinload(SysUser.roles).selectinload(SysRole.permissions))
+    #         )
+    #
+    #         # 使用查询构建器应用过滤条件
+    #         query_builder = create_user_query_builder()
+    #         query_builder.filter(**filters)
+    #
+    #         # 构建查询（不包含分页）
+    #         query = query_builder.build(stmt)
+    #
+    #         # 应用分页
+    #         query = query.offset(offset).limit(limit)
+    #
+    #         # 执行查询
+    #         result = await session.execute(query)
+    #         rows = result.all()
+    #
+    #         if not rows:
+    #             return [], 0
+    #
+    #         # 提取数据和总数
+    #         users = [row[0] for row in rows]
+    #         total = rows[0].total_count if rows[0].total_count else 0
+    #
+    #         return users, total
 
     async def count_total(self, **filters) -> int:
         """
