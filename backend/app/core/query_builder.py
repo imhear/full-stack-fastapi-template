@@ -273,7 +273,8 @@ def create_user_query_builder() -> PaginatedQueryBuilder:
         "mobile": {"allow_equal": True, "allow_like": True},
         "status": {"allow_equal": True, "allow_range": True},
         "gender": {"allow_equal": True, "allow_range": True},
-        "dept_id": {"allow_equal": True, "allow_in": True},  # 新增dept_id字段
+        "dept_id": {"allow_equal": True, "allow_in": True},
+        "is_deleted": {"allow_equal": True, "allow_not_equal": True},  # 启用等于和不等于
     })
 
     # 注册复杂策略
@@ -303,7 +304,23 @@ def create_user_query_builder() -> PaginatedQueryBuilder:
         InFilter(SysUser.dept_id)
     )
 
-    # ✅ 移除默认排序，让调用方动态设置
-    # builder.order_by(SysUser.create_time.desc())
+    # 注册is_deleted字段的IN查询策略
+    builder.register_strategy(
+        "is_deleted__in",
+        InFilter(SysUser.is_deleted)
+    )
+
+    # 注册is_deleted不等于策略（由于auto_register_field_strategies已注册，这里可省略）
+    # 但为了代码清晰，我们可以显式注册所有需要的策略
+    builder.register_strategy(
+        "is_deleted__eq",
+        EqualFilter(SysUser.is_deleted)
+    )
+
+    builder.register_strategy(
+        "is_deleted__ne",
+        NotEqualFilter(SysUser.is_deleted)
+    )
+
 
     return builder

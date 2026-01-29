@@ -189,6 +189,15 @@ class UserService:
 
         print(f"🔍 服务层过滤条件（重构版）: {filters}")
 
+        # 关键修改：默认添加 is_deleted=0 条件
+        # 但只在没有显式指定 is_deleted 相关条件时才添加
+        has_explicit_is_deleted_filter = any(
+            key.startswith('is_deleted') for key in filters.keys()
+        )
+
+        if not has_explicit_is_deleted_filter:
+            filters['is_deleted__eq'] = 0
+
         # 方法1：使用新的list_all_with_count方法（推荐，性能更好）
         users, total = await self.user_repository.list_all_with_count(
             offset=offset,
@@ -334,72 +343,6 @@ class UserService:
             # 9. 转换为前端格式返回
             return user_mapper.to_user_detail(updated_user)
 
-
-    # async def update_user(self, user_id: str, user_update: UserUpdate) -> Dict[str, Any]:
-    #     """
-    #     更新用户信息（返回前端格式）
-    #
-    #     Args:
-    #         user_id: 用户ID
-    #         user_update: 更新数据
-    #
-    #     Returns:
-    #         前端格式的更新后用户信息
-    #     """
-    #     # 1. 获取用户
-    #     user = await self.get_user_by_id(user_id)
-    #
-    #     # TODO 待实现邮箱字段
-    #     # 2. 邮箱唯一性验证（如果修改邮箱）
-    #     if user_update.email and user_update.email != user.email:
-    #         existing_user = await self.user_repository.get_by_email(email=user_update.email)
-    #         if existing_user:
-    #             raise BadRequest(detail=f"邮箱 '{user_update.email}' 已被使用")
-    #
-    #     async with self.user_repository.transaction() as session:
-    #         # 3. 提取更新数据
-    #         update_data = user_update.model_dump(exclude_unset=True)
-    #
-    #         # 4. 处理状态映射，过期属性
-    #         # if "status" in update_data:
-    #         #     user.is_active = update_data["status"] == 1
-    #         #
-    #         # # 5. 更新基础字段，过期属性
-    #         # for key, value in update_data.items():
-    #         #     if key not in ["role_ids", "status"]:
-    #         #         setattr(user, key, value)
-    #
-    #         # 5. 更新基础字段
-    #         for key, value in update_data.items():
-    #             if key not in ["role_ids"]:
-    #                 setattr(user, key, value)
-    #
-    #         # 7. 保存更新
-    #         await self.user_repository.update(user=user, session=session)
-    #
-    #         # 6. 更新角色（如果有）
-    #         if "role_ids" in update_data:
-    #             await self.user_repository.assign_roles(
-    #                 user_id=user_id,
-    #                 role_ids=update_data["role_ids"],
-    #                 session=session
-    #             )
-    #
-    #         # 7. 保存更新
-    #         await self.user_repository.update(user=user, session=session)
-    #
-    #         # 8. 重新加载完整数据
-    #         updated_user = await self.get_user_by_id(user_id)
-    #
-    #         # 9. 转换为前端格式返回
-    #         return user_mapper.to_user_detail(updated_user)
-    #         # ==================== 需要清理的垃圾代码 ====================
-    #         # 7. 保存更新
-    #         # updated_user = await self.user_repository.update(user=user, session=session)
-    #
-    #     # 8. 转换为前端格式返回
-    #     # return await self._convert_user_to_frontend(updated_user)
-
     async def update_last_login(self, user_id: str) -> None:
         """
         更新最后登录时间
@@ -509,51 +452,5 @@ class UserService:
 
             return deleted_count
 
-    # async def delete_user(self, user_id: str) -> Dict[str, Any]:
-    #     """
-    #     更新用户信息（返回前端格式）
-    #
-    #     Args:
-    #         user_id: 用户ID
-    #         user_update: 更新数据
-    #
-    #     Returns:
-    #         前端格式的更新后用户信息
-    #     """
-    #     # 1. 获取用户
-    #     user = await self.get_user_by_id(user_id)
-    #     if not user:
-    #         raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
-    #
-    #     async with self.user_repository.transaction() as session:
-    #         # 3. 提取更新数据
-    #         user.is_deleted = 1
-    #
-    #         # 7. 保存更新
-    #         await self.user_repository.update(user=user, session=session)
-    #
-    #         return Message(message=f"用户 '{user_id}' 删除成功")
-    #
-
-
-    # async def delete_user(self, user_id: str) -> Message:
-    #     """
-    #     删除用户
-    #
-    #     Args:
-    #         user_id: 用户ID
-    #
-    #     Returns:
-    #         操作结果消息
-    #     """
-    #     async with self.user_repository.transaction() as session:
-    #         success = await self.user_repository.delete(user_id=user_id, session=session)
-    #         if not success:
-    #             raise ResourceNotFound(detail=f"用户 '{user_id}' 不存在")
-    #
-    #         # 记录删除日志（生产环境建议）
-    #         # await self._log_user_deletion(user_id)
-    #
-    #         return Message(message=f"用户 '{user_id}' 删除成功")
 
     # ==================== 辅助方法 ====================
