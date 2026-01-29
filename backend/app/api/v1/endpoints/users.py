@@ -221,6 +221,60 @@ async def update_user(
         raise HTTPException(status_code=500, detail=f"用户信息更新失败: {str(e)}")
 
 
+# 修改原有的delete_user API端点
+@router.delete(
+    "/{ids}",
+    response_model=ApiResponse[dict],
+    summary="删除用户（支持批量）",
+    description="删除指定用户或多个用户，多个用户ID以英文逗号分隔"
+)
+@permission(
+    code=PermissionCode.USER_DELETE.value,
+    name="用户删除权限",
+    description="删除用户的核心权限"
+)
+@inject
+async def delete_user(
+        ids: str,
+        # _superuser: CurrentSuperuser,
+        user_service: UserServiceDep
+        # _=Depends(permission_checker(PermissionCode.USER_DELETE.value))
+) -> Any:
+    """
+    删除用户（支持批量）
+
+    Args:
+        ids: 用户ID字符串，多个以英文逗号分隔，例如：id1,id2,id3
+    """
+    try:
+        # 将逗号分隔的字符串转换为列表
+        if not ids or not ids.strip():
+            raise BadRequest(detail="用户ID不能为空")
+
+        # 分割字符串，过滤空值
+        user_ids = [user_id.strip() for user_id in ids.split(',') if user_id.strip()]
+
+        if not user_ids:
+            raise BadRequest(detail="没有提供有效的用户ID")
+
+        # 调用服务层的批量删除方法
+        deleted_count = await user_service.batch_soft_delete(user_ids)
+
+        return ApiResponse.success(
+            data={
+                "deleted": True,
+                "deleted_count": deleted_count,
+                "total_ids": len(user_ids)
+            },
+            msg=f"成功删除 {deleted_count} 个用户"
+        )
+    except BadRequest as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ResourceNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"用户删除失败: {str(e)}")
+
 # @router.delete(
 #     "/{user_id}",
 #     response_model=ApiResponse[dict],
@@ -232,8 +286,8 @@ async def update_user(
 # async def delete_user(
 #         user_id: str,
 #         _superuser: CurrentSuperuser,
-#         user_service: UserServiceDep,
-#         _=Depends(permission_checker(PermissionCode.USER_DELETE.value))
+#         user_service: UserServiceDep#,
+#         # _=Depends(permission_checker(PermissionCode.USER_DELETE.value))
 # ) -> Any:
 #     """
 #     删除用户
@@ -245,7 +299,7 @@ async def update_user(
 #         raise HTTPException(status_code=404, detail=str(e))
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"用户删除失败: {str(e)}")
-#
+
 # ==============
 
 # 1. 创建用户（仅超级用户）

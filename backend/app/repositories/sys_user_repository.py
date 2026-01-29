@@ -275,6 +275,51 @@ class UserRepository:
 
             return users, total
 
+    async def list_all_by_ids(
+            self,
+            user_ids: List[str],
+            session: AsyncSession,
+            include_deleted: bool = False
+    ) -> List[SysUser]:
+        """
+        根据ID列表批量查询用户
+
+        Args:
+            user_ids: 用户ID列表
+            session: 数据库会话
+            include_deleted: 是否包含已删除的用户（默认不包含）
+
+        Returns:
+            用户对象列表
+        """
+        if not user_ids:
+            return []
+
+        # 构建查询
+        stmt = (
+            select(SysUser)
+            .where(SysUser.id.in_(user_ids))
+        )
+
+        # 如果不包含已删除的用户，添加过滤条件
+        if not include_deleted:
+            stmt = stmt.where(SysUser.is_deleted == 0)
+
+        result = await session.execute(stmt)
+        users = result.scalars().all()
+
+        # 创建ID到用户的映射，保持输入ID的顺序
+        user_map = {str(user.id): user for user in users}
+
+        # 按原始ID顺序返回用户列表
+        ordered_users = []
+        for user_id in user_ids:
+            if user_id in user_map:
+                ordered_users.append(user_map[user_id])
+
+        return ordered_users
+
+
 
     # async def list_all_with_count(
     #         self,

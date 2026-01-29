@@ -285,7 +285,6 @@ class UserService:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"创建用户失败: {str(e)}")
 
-
     async def update_user(self, user_id: str, user_update: UserUpdate) -> Dict[str, Any]:
         """
         更新用户信息（返回前端格式）
@@ -300,7 +299,6 @@ class UserService:
         # 1. 获取用户
         user = await self.get_user_by_id(user_id)
 
-        # TODO 待实现邮箱字段
         # 2. 邮箱唯一性验证（如果修改邮箱）
         if user_update.email and user_update.email != user.email:
             existing_user = await self.user_repository.get_by_email(email=user_update.email)
@@ -446,24 +444,116 @@ class UserService:
 
             return Message(message="密码重置成功")
 
-    async def delete_user(self, user_id: str) -> Message:
+    async def batch_soft_delete(
+            self,
+            ids: List[str],
+            deleted_by: Optional[str] = None
+    ) -> int:
         """
-        删除用户
+        批量逻辑删除用户
 
         Args:
-            user_id: 用户ID
+            ids: 用户ID列表
+            deleted_by: 执行删除操作的用户ID（可选）
 
         Returns:
-            操作结果消息
+            成功删除的数量
         """
+        if not ids:
+            return 0
+
         async with self.user_repository.transaction() as session:
-            success = await self.user_repository.delete(user_id=user_id, session=session)
-            if not success:
-                raise ResourceNotFound(detail=f"用户 '{user_id}' 不存在")
+            deleted_count = 0
 
-            # 记录删除日志（生产环境建议）
-            # await self._log_user_deletion(user_id)
+            # 根据用户id列表返回用户对象列表
+            users = await self.user_repository.list_all_by_ids(ids, session=session)
 
-            return Message(message=f"用户 '{user_id}' 删除成功")
+            # 检查是否所有用户都找到了
+            found_ids = {str(user.id) for user in users}
+            not_found_ids = [user_id for user_id in ids if user_id not in found_ids]
+
+            if not_found_ids:
+                raise ResourceNotFound(
+                    detail=f"以下用户不存在或已被删除: {', '.join(not_found_ids)}"
+                )
+
+            # 逐个逻辑删除
+            for user in users:
+                try:
+                    # 检查是否已删除
+                    if user.is_deleted == 1:
+                        raise BadRequest(detail=f"用户 '{user.username}' (ID: {user.id}) 已被删除，无法重复删除")
+
+                    # 检查是否为超级管理员（如果模型有这个字段）,TODO is_super_admin is not exists
+                    if hasattr(user, 'is_super_admin') and user.is_super_admin:
+                        raise BadRequest(detail=f"用户 '{user.username}' (ID: {user.id}) 是超级管理员，禁止删除")
+
+                    # 执行逻辑删除
+                    user.is_deleted = 1
+                    # user.delete_time = datetime.now()
+
+                    if deleted_by:
+                        user.deleted_by = deleted_by
+
+                    # 保存更新
+                    await self.user_repository.update(user, session)
+                    deleted_count += 1
+                except BadRequest as e:
+                    # 业务验证失败，直接抛出
+                    raise
+                except Exception as e:
+                    # 其他异常，记录并继续处理其他用户
+                    print(f"删除用户 {user.id} 时发生异常: {str(e)}")
+                    # 可以选择回滚或继续，这里选择回滚整个事务
+                    raise BadRequest(detail=f"删除用户 '{user.username}' 时发生错误: {str(e)}")
+
+            return deleted_count
+
+    # async def delete_user(self, user_id: str) -> Dict[str, Any]:
+    #     """
+    #     更新用户信息（返回前端格式）
+    #
+    #     Args:
+    #         user_id: 用户ID
+    #         user_update: 更新数据
+    #
+    #     Returns:
+    #         前端格式的更新后用户信息
+    #     """
+    #     # 1. 获取用户
+    #     user = await self.get_user_by_id(user_id)
+    #     if not user:
+    #         raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
+    #
+    #     async with self.user_repository.transaction() as session:
+    #         # 3. 提取更新数据
+    #         user.is_deleted = 1
+    #
+    #         # 7. 保存更新
+    #         await self.user_repository.update(user=user, session=session)
+    #
+    #         return Message(message=f"用户 '{user_id}' 删除成功")
+    #
+
+
+    # async def delete_user(self, user_id: str) -> Message:
+    #     """
+    #     删除用户
+    #
+    #     Args:
+    #         user_id: 用户ID
+    #
+    #     Returns:
+    #         操作结果消息
+    #     """
+    #     async with self.user_repository.transaction() as session:
+    #         success = await self.user_repository.delete(user_id=user_id, session=session)
+    #         if not success:
+    #             raise ResourceNotFound(detail=f"用户 '{user_id}' 不存在")
+    #
+    #         # 记录删除日志（生产环境建议）
+    #         # await self._log_user_deletion(user_id)
+    #
+    #         return Message(message=f"用户 '{user_id}' 删除成功")
 
     # ==================== 辅助方法 ====================
