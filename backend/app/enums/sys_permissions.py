@@ -30,11 +30,15 @@ class PermissionCode(Enum):
     USER_UPDATE = ("user:update", "更新用户", "允许修改现有用户信息")
     USER_DELETE = ("user:delete", "删除用户", "允许从系统中删除用户")
 
-    # 用户管理权限
-    DEPT_READ = ("dept:read", "查询用户详情", "需要【user:read】权限，仅超级用户可访问")
-    DEPT_CREATE = ("dept:create", "创建用户", "允许在系统中创建新用户")
-    DEPT_UPDATE = ("dept:update", "更新用户", "允许修改现有用户信息")
-    DEPT_DELETE = ("dept:delete", "删除用户", "允许从系统中删除用户")
+    # 新增：用户回收站权限
+    USER_RECYCLE_BIN_VIEW = ("user:recycle-bin:view", "查看回收站", "允许查看已删除的用户列表")
+    USER_RECYCLE_BIN_RESTORE = ("user:recycle-bin:restore", "恢复用户", "允许恢复已删除的用户")
+
+    # 部门管理权限
+    DEPT_READ = ("dept:read", "查询部门详情", "需要【dept:read】权限，仅超级用户可访问")
+    DEPT_CREATE = ("dept:create", "创建部门", "允许在系统中创建新部门")
+    DEPT_UPDATE = ("dept:update", "更新部门", "允许修改现有部门信息")
+    DEPT_DELETE = ("dept:delete", "删除部门", "允许从系统中删除部门")
 
     # 数据字典权限
     SYSTEM_DICT_READ = ("system:dict:read", "查看数据字典", "允许查看数据字典")

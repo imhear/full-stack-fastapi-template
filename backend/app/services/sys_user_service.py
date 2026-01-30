@@ -227,6 +227,43 @@ class UserService:
         total = await self.user_repository.count_total()
         return UserList(items=users, total=total)
 
+    async def list_deleted_users(
+            self,
+            offset: int = 0,
+            limit: int = 100,
+            filters: Optional[Dict[str, Any]] = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        获取已删除用户列表（回收站功能）
+
+        Args:
+            offset: 偏移量
+            limit: 每页数量
+            filters: 过滤条件
+
+        Returns:
+            (用户列表, 总数)
+        """
+        # 初始化过滤参数
+        filters = filters or {}
+
+        # 强制设置为只查询已删除的用户
+        filters['is_deleted__eq'] = 1
+
+        print(f"🔍 回收站服务层过滤条件: {filters}")
+
+        # 使用查询构建器获取数据和总数
+        users, total = await self.user_repository.list_all_with_count(
+            offset=offset,
+            limit=limit,
+            **filters
+        )
+
+        print(f"📊 回收站服务层结果: 分页查询{len(users)}条，总数{total}条")
+
+        # 转换为前端格式
+        return user_mapper.to_users_list(users), total
+
     # ==================== 用户管理方法 ====================
 
     async def create(self, user_in: UserCreate) -> Any:
@@ -451,6 +488,54 @@ class UserService:
                     raise BadRequest(detail=f"删除用户 '{user.username}' 时发生错误: {str(e)}")
 
             return deleted_count
+
+    async def restore_user(self, user_id: str) -> Dict[str, Any]:
+        """
+        恢复已删除的用户
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            恢复后的用户信息
+        """
+        async with self.user_repository.transaction() as session:
+            try:
+                # 获取用户（包括已删除的）
+                user = await self.user_repository.get_by_id(user_id)
+
+                if not user:
+                    raise ResourceNotFound(detail=f"用户ID '{user_id}' 不存在")
+
+                # 检查是否已删除
+                if user.is_deleted != 1:
+                    raise BadRequest(detail=f"用户 '{user.username}' 未被删除，无需恢复")
+
+                # 恢复用户
+                user.is_deleted = 0
+                user.delete_time = None
+                # 注意：如果有deleted_by字段，也一并清空
+
+                # 保存更新
+                await self.user_repository.update(user, session)
+
+                # 重新加载完整数据
+                restored_user = await self.user_repository.get_by_id(user_id)
+
+                # 转换为前端格式返回
+                return user_mapper.to_user_detail(restored_user)
+
+            except ResourceNotFound:
+                raise
+            except BadRequest:
+                raise
+            except Exception as e:
+                # 记录错误日志
+                import traceback
+                print(f"恢复用户失败: {str(e)}")
+                traceback.print_exc()
+                raise BadRequest(detail=f"恢复用户失败: {str(e)}")
+
 
 
     # ==================== 辅助方法 ====================

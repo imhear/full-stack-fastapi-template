@@ -35,6 +35,219 @@ from app.api.deps import CurrentSuperuser, CurrentUser, UserServiceDep, DeptServ
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+# ============ 用户回收站相关接口 ============
+@router.get(
+    "/recycle-bin",
+    response_model=ApiResponse,
+    summary="获取回收站用户列表",
+    description="获取已删除的用户列表，仅超级管理员可访问"
+)
+@permission(
+    code=PermissionCode.USER_RECYCLE_BIN_VIEW.value,
+    name="回收站查看权限",
+    description="查看已删除用户列表"
+)
+@inject
+async def list_deleted_users(
+        user_service: UserServiceDep,
+        dept_service: DeptServiceDep,
+        # 分页参数
+        pageNum: int = Query(1, description="页码", ge=1),
+        pageSize: int = Query(10, description="每页数量", ge=1, le=100),
+        # 排序参数
+        field: Optional[str] = Query(None, description="排序字段"),
+        direction: Optional[str] = Query("DESC", description="排序方向（ASC-正序；DESC-反序）"),
+        # 过滤参数 - 支持查询已删除用户（默认已包含is_deleted=1）
+        username__like: Optional[str] = Query(None, description="用户名（模糊匹配）"),
+        nickname__like: Optional[str] = Query(None, description="昵称（模糊匹配）"),
+        keywords: Optional[str] = Query(None, description="综合搜索（用户名/昵称/邮箱/手机号）"),
+        create_time_start: Optional[date] = Query(None, alias="createTime[0]", description="创建时间起始（格式：YYYY-MM-DD）"),
+        create_time_end: Optional[date] = Query(None, alias="createTime[1]", description="创建时间结束（格式：YYYY-MM-DD）"),
+        mobile__like: Optional[str] = Query(None, description="手机号模糊搜索"),
+        email__like: Optional[str] = Query(None, description="邮箱模糊搜索"),
+        deptId: Optional[str] = Query(None, description="部门ID，筛选该部门及其所有子部门的用户")
+) -> Any:
+    """
+    获取回收站用户列表
+
+    说明：
+    1. 默认只查询已删除的用户（is_deleted=1）
+    2. 支持与其他过滤条件组合查询
+    3. 排序和分页与普通用户列表一致
+    """
+    try:
+        print("🔵 ===== 回收站用户列表接口被调用 =====")
+
+        # 计算分页偏移量
+        offset = (pageNum - 1) * pageSize
+
+        # 构建过滤字典
+        filters = {}
+
+        # 如果存在deptId，获取部门ID列表
+        if deptId:
+            try:
+                dept_ids = await dept_service.get_dept_and_sub_dept_ids(deptId)
+                if dept_ids:
+                    filters["dept_id__in"] = dept_ids
+                    print(f"🔍 回收站部门筛选条件: dept_id__in={dept_ids}")
+            except Exception as e:
+                print(f"⚠️ 获取部门ID列表失败: {str(e)}")
+                filters["dept_id__eq"] = deptId
+
+        # 处理排序参数
+        if field:
+            field_mapping = {
+                "createTime": "create_time",
+                "updateTime": "update_time",
+                "username": "username",
+                "nickname": "nickname",
+                "gender": "gender",
+                "status": "status",
+                "mobile": "mobile",
+                "email": "email"
+            }
+
+            db_field = field_mapping.get(field, field)
+            filters["sort_field"] = db_field
+            filters["sort_direction"] = direction.upper() if direction else "DESC"
+        else:
+            # 默认排序：按删除时间降序（TODO: 如果有delete_time字段可以修改）
+            filters["sort_field"] = "create_time"
+            filters["sort_direction"] = "DESC"
+
+        # 模糊查询
+        if username__like is not None:
+            filters["username__like"] = username__like
+
+        if nickname__like is not None:
+            filters["nickname__like"] = nickname__like
+
+        if mobile__like is not None:
+            filters["mobile__like"] = mobile__like
+
+        if email__like is not None:
+            filters["email__like"] = email__like
+
+        # 多字段关键词搜索
+        if keywords and keywords.strip():
+            filters["keywords"] = keywords.strip()
+
+        # 创建时间范围
+        time_range = {}
+        if create_time_start:
+            time_range["start"] = create_time_start
+        if create_time_end:
+            time_range["end"] = create_time_end
+
+        if time_range:
+            filters["create_time_range"] = time_range
+
+        # 记录开始时间
+        import time
+        start_time = time.time()
+
+        # 并行执行数据获取
+        user_future = user_service.list_deleted_users(
+            offset=offset,
+            limit=pageSize,
+            filters=filters
+        )
+
+        dept_future = dept_service.get_dept_options_map()
+
+        user_result, dept_map = await asyncio.gather(
+            user_future,
+            dept_future,
+            return_exceptions=True
+        )
+
+        # 检查异常
+        if isinstance(user_result, Exception):
+            raise user_result
+
+        if isinstance(dept_map, Exception):
+            dept_map = {}
+
+        # 解包用户结果
+        users, total = user_result
+
+        # 补充部门名称
+        for user in users:
+            dept_id = user.get('deptId')
+            if dept_id and dept_id in dept_map:
+                user['deptName'] = dept_map[dept_id]
+            else:
+                user['deptName'] = None
+
+        # 计算总时间
+        total_time = time.time() - start_time
+
+        options = {
+            "data": users,
+            "page": {
+                "total": total,
+                "pageNum": pageNum,
+                "pageSize": pageSize
+            }
+        }
+
+        return ApiResponse.success(
+            data=options,
+            msg="获取回收站用户列表成功"
+        )
+
+    except Exception as e:
+        print(f"❌ 获取回收站用户列表失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"获取回收站用户列表失败: {str(e)}")
+
+
+@router.post(
+    "/{user_id}/restore",
+    response_model=ApiResponse[dict],
+    summary="恢复用户",
+    description="将已删除的用户恢复到正常状态"
+)
+@permission(
+    code=PermissionCode.USER_RECYCLE_BIN_RESTORE.value,
+    name="用户恢复权限",
+    description="恢复已删除用户"
+)
+@inject
+async def restore_user(
+        user_id: str,
+        user_service: UserServiceDep#,
+        # _ = Depends(permission_checker(PermissionCode.USER_UPDATE.value))  # 有默认值
+) -> Any:
+    """
+    恢复已删除的用户
+
+    注意：
+    1. 只能恢复已删除的用户
+    2. 恢复后用户的is_deleted字段设为0
+    3. 恢复后用户可以正常登录和使用系统
+    """
+    try:
+        print(f"🎯 API端点: 开始恢复用户 {user_id}")
+
+        # 调用服务层恢复用户
+        user_info = await user_service.restore_user(user_id)
+
+        return ApiResponse.success(
+            data=user_info,
+            msg=f"用户 '{user_id}' 恢复成功"
+        )
+
+    except ResourceNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BadRequest as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"用户恢复失败: {str(e)}")
+
+
 @router.get(
     "/me",
     response_model=ApiResponse[UserMeResponse],  # 使用 UserMeResponse 模型
@@ -719,6 +932,8 @@ async def update_me_password(
     user_service: UserServiceDep,  # 无默认值
 ) -> Any:
     return await user_service.update_self_password(current_user.id, user_update)
+
+
 
 
 # 在 users.py 中添加一个测试端点
