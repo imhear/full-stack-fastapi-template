@@ -46,7 +46,6 @@ async def get_menu_routes(
 
         # 判断用户角色
         if current_user.status == 1:
-            # 管理员路由
             routes = [
                 {
                     "path": "/dashboard",
@@ -95,6 +94,16 @@ async def get_menu_routes(
                             }
                         },
                         {
+                            "path": "user/recycle-bin",
+                            "component": "system/user/RecycleBin",
+                            "name": "SystemUserRecycleBin",
+                            "meta": {
+                                "title": "用户回收站",
+                                "icon": "",
+                                "hidden": False
+                            }
+                        },
+                        {
                             "path": "role",
                             "component": "system/role/index",
                             "name": "Role",
@@ -117,6 +126,7 @@ async def get_menu_routes(
                     ]
                 }
             ]
+            # 管理员路由
         else:
             # 普通用户路由
             routes = [

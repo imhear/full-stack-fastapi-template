@@ -27,9 +27,14 @@ class ApiResponse(BaseModel, Generic[T]):
         return cls(code="00000", data=data, msg=msg)
 
     @classmethod
-    def error(cls, code: str, msg: str, data: Any = None) -> 'ApiResponse':
-        """错误响应快捷方法"""
-        return cls(code=code, msg=msg, data=data)
+    def error(cls, data: T = None, msg: str = "操作失败") -> 'ApiResponse[T]':
+        """失败响应快捷方法"""
+        return cls(code="10001", data=data, msg=msg)
+
+    # @classmethod
+    # def error(cls, code: str, msg: str, data: Any = None) -> 'ApiResponse':
+    #     """错误响应快捷方法"""
+    #     return cls(code=code, msg=msg, data=data)
 
 
 class ErrorResponse(BaseModel):

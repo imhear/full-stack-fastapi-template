@@ -32,6 +32,22 @@
     "update_time": null
   },
   {
+    "id": "00000000-0000-0000-0106-000000000000",
+    "parent_id": "00000000-0000-0000-0001-000000000000",
+    "tree_path": "0/00000000-0000-0000-0001-000000000000",
+    "name": "用户回收站",
+    "type": "M",
+    "route_name": "SystemUserRecycleBin",
+    "route_path": "user/recycle-bin",
+    "component": "system/user/RecycleBin",
+    "visible": 1,
+    "sort": 6,
+    "icon": "delete",
+    "redirect": "",
+    "create_time": null,
+    "update_time": null
+  },
+  {
     "id": "00000000-0000-0000-0102-000000000000",
     "parent_id": "00000000-0000-0000-0001-000000000000",
     "tree_path": "0/00000000-0000-0000-0001-000000000000",
