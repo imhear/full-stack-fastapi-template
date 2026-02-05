@@ -269,12 +269,12 @@ async def login_access_token(  # 改def→async def
     # 关键2：调用异步AuthService方法时加await
     print("关键2：调用异步AuthService方法时加await")
     user = await auth_service.authenticate_user(
-        email=form_data.username, password=form_data.password
+        username=form_data.username, password=form_data.password
     )
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-    elif not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+    # elif not user.is_active:
+    #     raise HTTPException(status_code=400, detail="Inactive user")
 
     # 关键3：若user_service.update_last_login是异步方法，也需加await（参考历史改造）
     await user_service.update_last_login(user_id=user.id)

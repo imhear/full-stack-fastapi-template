@@ -8,6 +8,7 @@ from dependency_injector.wiring import inject, Provide
 from typing import Annotated, List, Any
 
 from app.di.container import Container
+from app.models import SysRole
 from app.schemas.responses import ApiResponse
 from app.services.sys_role_service import RoleService
 from app.schemas.sys_role import RoleCreate, RoleUpdate, RoleOut  # 明确导入所需Schema
@@ -81,14 +82,71 @@ async def get_role_options(
         raise HTTPException(status_code=500, detail=f"获取角色选项失败: {str(e)}")
 
 
-# 1. 异步查询角色列表（完善CRUD）
-@router.get("/", response_model=List[RoleOut])
+# # 1. 异步查询角色列表（完善CRUD）
+# @router.get("/list", response_model=List[RoleOut])
+# @inject
+# async def list_roles(
+#     _superuser: CurrentSuperuser,
+#     role_service: RoleServiceDep
+# ):
+#     # 需在RoleService和RoleRepository中补充list方法（见下文完善）
+#     return await role_service.list_roles()
+
+
+# ============ 基础CRUD操作 ============
+@router.get(
+    "/list",
+    response_model=ApiResponse,
+    summary="获取用户列表",
+    description="分页获取用户列表，支持多种过滤条件，返回前端友好格式"
+)
+@permission(
+    code=PermissionCode.USER_READ.value,
+    name="用户查询权限",
+    description="查看用户详情"
+)
 @inject
 async def list_roles(
     _superuser: CurrentSuperuser,
     role_service: RoleServiceDep
-):
+)-> Any:
+    """
+    获取角色列表
+    默认排序：按创建时间降序（createTime DESC）
+    """
     # 需在RoleService和RoleRepository中补充list方法（见下文完善）
+    roles = await role_service.list_roles()
+
+    # ========== 4. 数据组装阶段（串行） ==========
+    # 补充部门名称
+    new_roles = []
+    for role in roles:
+        new_roles.append({
+                "id": role.id,
+                "name": role.name,
+                "code": role.code,
+                "status": role.status,
+                "sort": role.sort,
+                "createTime": role.create_time,
+                "updateTime": role.update_time
+            })
+
+    total = 3
+    pageNum = 1
+    pageSize = 10
+
+    options = {
+        "data": new_roles,
+        "page": {
+            "total": total,
+            "pageNum": pageNum,
+            "pageSize": pageSize
+        }
+    }
+    return ApiResponse.success(
+        data=options,
+        msg="获取角色列表成功"
+    )
     return await role_service.list_roles()
 
 # 2. 异步查询角色详情
